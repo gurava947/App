@@ -1,0 +1,5 @@
+.page-section { container-type: inline-size; }
+@container (max-width: 680px) {
+  .page-intro { align-items: flex-start; flex-direction: row; }
+  .reel-grid, .settings-columns { grid-template-columns: 1fr; }
+}

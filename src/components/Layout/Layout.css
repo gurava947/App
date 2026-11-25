@@ -1,0 +1,2 @@
+.topbar, .bottom-nav { contain: layout paint; }
+.brand, .nav-item { -webkit-tap-highlight-color: transparent; }
