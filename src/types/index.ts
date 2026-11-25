@@ -9,10 +9,10 @@ export type IconName =
   | "heart" | "eye" | "missed" | "close" | "check" | "phone-out" | "mic" | "micOff"
   | "flipCamera" | "volumeUp" | "volumeOff" | "minimize" | "moreVertical"
   | "noiseSuppression" | "touchUp" | "location" | "poll" | "event" | "image" | "contact" | "document" | "ai"
-  | "repost" | "bookmark" | "edit" | "delete";
+  | "repost" | "bookmark" | "edit" | "delete" | "share";
 
 export type MediaFile = { id: string; name: string; mimeType: string; sizeBytes: number; url: string };
-export type MessageKind = "text" | "media" | "contact" | "poll" | "event" | "location";
+export type MessageKind = "text" | "media" | "contact" | "poll" | "event" | "location" | "feed";
 export type PollOption = { id: number; text: string; votes: number; selected: boolean };
 export type PollPayload = {
   id: number;
@@ -34,12 +34,14 @@ export type MessagePayload =
   | { kind: "text" }
   | { kind: "media"; files: MediaFile[] }
   | { kind: "contact"; contact: { id: string; name: string; email: string } | null }
+  | { kind: "feed"; post: { id: string; kind: "post" | "reel"; authorName: string; caption: string; media: MediaFile | null } | null }
   | { kind: "poll"; poll: PollPayload }
   | { kind: "event"; event: EventPayload }
   | { kind: "location"; latitude: number | null; longitude: number | null; accuracy: number | null; liveShareId?: string; expiresAt?: string | null };
 export type MessagePayloadInput =
   | { mediaIds: string[] }
   | { contactId: string }
+  | { postId: string }
   | { question: string; options: string[] }
   | { title: string; startsAt: string; place: string; description: string }
   | { latitude: number; longitude: number; accuracy: number | null; consent?: true; liveShareId?: string; expiresAt?: string };

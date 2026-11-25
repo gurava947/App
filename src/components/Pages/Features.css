@@ -23,7 +23,7 @@
 .feed-post-caption { margin: 0; padding: 12px 15px; color: var(--ink); font-size: 11px; line-height: 1.6; overflow-wrap: anywhere; }
 .feed-text-post { min-height: 135px; padding: 27px 22px; display: grid; place-items: center; background: linear-gradient(135deg, var(--green-faint), var(--card)); color: var(--ink); font: 650 18px/1.5 'Manrope', sans-serif; text-align: center; overflow-wrap: anywhere; }
 .feed-post-actions { min-height: 48px; padding: 4px 11px; display: flex; align-items: center; gap: 6px; border-top: 1px solid var(--line); }
-.feed-post-actions button { min-width: 38px; min-height: 36px; padding: 0 7px; display: inline-flex; align-items: center; justify-content: center; gap: 5px; border: 0; border-radius: 9px; background: transparent; color: var(--muted); font-size: 8px; cursor: pointer; }
+.feed-post-actions button { min-width: 44px; min-height: 44px; padding: 0 7px; display: inline-flex; align-items: center; justify-content: center; gap: 5px; border: 0; border-radius: 9px; background: transparent; color: var(--muted); font-size: 8px; cursor: pointer; touch-action: manipulation; }
 .feed-post-actions button:hover, .feed-post-actions button.is-selected { color: var(--green); background: var(--green-faint); }
 .feed-post-actions button.is-liked { color: #da5366; }
 .feed-post-actions button:last-child { margin-left: auto; }
@@ -34,7 +34,15 @@
 .feed-empty > strong { color: var(--ink); font-size: 13px; }
 .feed-empty > span:not(.empty-search-icon) { max-width: 320px; color: var(--muted); font-size: 10px; line-height: 1.6; }
 .feed-modal-backdrop { position: fixed; z-index: 76; inset: 0; padding: 18px; display: grid; place-items: center; background: rgba(5, 15, 9, .52); backdrop-filter: blur(5px); }
-.feed-composer-modal, .feed-comments-modal { width: min(520px, 100%); max-height: min(85dvh, 680px); overflow-y: auto; padding: 20px; border: 1px solid var(--line); border-radius: 20px; background: var(--card); color: var(--ink); box-shadow: var(--shadow); }
+.feed-composer-modal, .feed-comments-modal, .feed-share-modal { width: min(520px, 100%); max-height: min(85dvh, 680px); overflow-y: auto; padding: 20px; border: 1px solid var(--line); border-radius: 20px; background: var(--card); color: var(--ink); box-shadow: var(--shadow); }
+.feed-share-modal { width: min(420px, 100%); }
+.feed-share-list { display: grid; gap: 7px; }
+.feed-share-contact { min-height: 58px; padding: 8px 10px; display: flex; align-items: center; gap: 10px; border: 1px solid var(--line); border-radius: 12px; background: var(--green-faint); color: var(--green); text-align: left; cursor: pointer; touch-action: manipulation; }
+.feed-share-contact:disabled { opacity: .6; cursor: wait; }
+.feed-share-contact > span:nth-child(2) { min-width: 0; flex: 1; display: grid; gap: 4px; }
+.feed-share-contact strong { color: var(--ink); font-size: 10px; }
+.feed-share-contact small, .feed-share-empty { color: var(--muted); font-size: 9px; }
+.feed-share-empty { padding: 18px 8px; line-height: 1.6; text-align: center; }
 .feed-modal-heading { margin-bottom: 16px; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .feed-modal-heading h2 { margin: 5px 0 0; font: 750 18px/1.2 'Manrope', sans-serif; }
 .feed-file-select { min-height: 43px; padding: 10px 12px; display: flex; align-items: center; overflow: hidden; border: 1px dashed var(--line); border-radius: 11px; color: var(--green); font-size: 10px; cursor: pointer; }
@@ -97,7 +105,7 @@
   .feed-post-card { border-radius: 15px; }
   .feed-post-media, .feed-post-card.is-reel .feed-post-media { max-height: 62dvh; }
   .feed-modal-backdrop { padding: 0; align-items: end; }
-  .feed-composer-modal, .feed-comments-modal { max-height: 90dvh; border-radius: 20px 20px 0 0; }
+  .feed-composer-modal, .feed-comments-modal, .feed-share-modal { max-height: 90dvh; border-radius: 20px 20px 0 0; }
   .notes-card { padding: 16px 14px; }
   .note-card { width: 100%; }
   .story-viewer-backdrop { padding: 0; }

@@ -51,6 +51,7 @@ const ligatures: Record<IconName, string> = {
   bookmark: "bookmark",
   edit: "edit",
   delete: "delete_outline",
+  share: "ios_share",
 };
 
 export function Icon({ name, size = 20, className = "" }: { name: IconName; size?: number; className?: string }) {

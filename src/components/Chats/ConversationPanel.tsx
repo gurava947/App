@@ -5,6 +5,8 @@ import { ChatToolsSheet } from "./ChatToolsSheet";
 import { MessageContent } from "./MessageContent";
 import type { CallEntry, Chat } from "../../types";
 
+const chatEmojis = ["😀", "😂", "🥰", "😍", "😊", "😎", "😭", "🤔", "👍", "👏", "🙌", "🙏", "❤️", "🔥", "🎉", "💯"];
+
 function durationLabel(seconds: number) {
   return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
 }
@@ -47,7 +49,10 @@ export function ConversationPanel({ chat, chats, calls, theme, draft, setDraft, 
 }) {
   const [toolsOpen, setToolsOpen] = useState(false);
   const [chatMenuOpen, setChatMenuOpen] = useState(false);
+  const [emojiOpen, setEmojiOpen] = useState(false);
   const messageAreaRef = useRef<HTMLDivElement>(null);
+  const emojiButtonRef = useRef<HTMLButtonElement>(null);
+  const touchStart = useRef<{ x: number; y: number } | null>(null);
   const previousChatId = useRef(chat.id);
   const followLatestMessage = useRef(true);
   const timeline = [
@@ -85,7 +90,33 @@ export function ConversationPanel({ chat, chats, calls, theme, draft, setDraft, 
     if (messageArea && followLatestMessage.current) messageArea.scrollTop = messageArea.scrollHeight;
   });
 
-  return <section className={`conversation-panel chat-theme-${theme}`} aria-label={`Conversation with ${chat.name}`}>
+  return <section
+    className={`conversation-panel chat-theme-${theme}`}
+    aria-label={`Conversation with ${chat.name}`}
+    onClick={(event) => {
+      if (emojiOpen && !(event.target instanceof Element && event.target.closest(".composer-wrap"))) setEmojiOpen(false);
+    }}
+    onKeyDown={(event) => {
+      if (emojiOpen && event.key === "Escape") {
+        setEmojiOpen(false);
+        emojiButtonRef.current?.focus();
+      }
+    }}
+    onTouchStart={(event) => {
+      const touch = event.changedTouches[0];
+      const target = event.target;
+      touchStart.current = touch.clientX <= 28 && !(target instanceof Element && target.closest("button, input, textarea, select, a, video"))
+        ? { x: touch.clientX, y: touch.clientY }
+        : null;
+    }}
+    onTouchEnd={(event) => {
+      const start = touchStart.current;
+      touchStart.current = null;
+      const touch = event.changedTouches[0];
+      if (start && touch.clientX - start.x > 90 && Math.abs(touch.clientY - start.y) < 70) onBack();
+    }}
+    onTouchCancel={() => { touchStart.current = null; }}
+  >
     <div className="conversation-head">
       <button className="mobile-back icon-button" aria-label="Back to chats" onClick={onBack}><Icon name="back" /></button>
       <Avatar initials={chat.initials} bg={chat.bg} fg={chat.fg} online={chat.online} className="conversation-avatar" />
@@ -96,11 +127,11 @@ export function ConversationPanel({ chat, chats, calls, theme, draft, setDraft, 
         <div className="chat-more-wrap">
           <button className="icon-button subtle-action more-contact" aria-label="Conversation details" aria-expanded={chatMenuOpen} onClick={() => setChatMenuOpen((open) => !open)}><Icon name="more" /></button>
           {chatMenuOpen && <div className="chat-more-menu">
-            <label>Chat theme<select value={theme} onChange={(event) => {
+            <label>Chat theme<span className="chat-theme-select"><select value={theme} onChange={(event) => {
               const value = event.target.value;
               if (value === "mint" || value === "sunset" || value === "midnight") onThemeChange(value);
               else onThemeChange("default");
-            }}><option value="default">Classic</option><option value="mint">Mint</option><option value="sunset">Sunset</option><option value="midnight">Midnight</option></select></label>
+            }}><option value="default">Classic</option><option value="mint">Mint</option><option value="sunset">Sunset</option><option value="midnight">Midnight</option></select><Icon name="chevron" size={17} /></span></label>
             <button type="button" disabled title="AI provider approval is required"><Icon name="ai" size={16} /> AI wallpaper · approval required</button>
             <button type="button" className="clear-chat-action" onClick={() => { setChatMenuOpen(false); onClearChat(); }}>Clear this conversation</button>
           </div>}
@@ -130,12 +161,29 @@ export function ConversationPanel({ chat, chats, calls, theme, draft, setDraft, 
           </span>
         </div>)}
     </div>
-    <form className="composer" onSubmit={onSend}>
-      <button type="button" className="composer-tool" aria-label="Open message tools" aria-expanded={toolsOpen} onClick={() => setToolsOpen(true)}><Icon name="attach" /></button>
-      <input value={draft} onChange={(event) => setDraft(event.target.value)} placeholder={`Message ${chat.name.split(" ")[0]}...`} aria-label="Write a message" />
-      <button type="button" className="composer-tool emoji-tool" aria-label="Add an emoji" onClick={() => setDraft(`${draft}${draft ? " " : ""}😊`)}><Icon name="smile" /></button>
-      <button type="submit" className="send-button" aria-label="Send message" disabled={!draft.trim()}><Icon name="send" size={19} /></button>
-    </form>
+    <div className="composer-wrap" onBlur={(event) => {
+      const nextTarget = event.relatedTarget;
+      if (!(nextTarget instanceof Node) || !event.currentTarget.contains(nextTarget)) setEmojiOpen(false);
+    }}>
+      {emojiOpen && <div className="emoji-picker" role="group" aria-label="Choose an emoji" onKeyDown={(event) => {
+        if (event.key === "Escape") {
+          setEmojiOpen(false);
+          emojiButtonRef.current?.focus();
+        }
+      }}>
+        {chatEmojis.map((emoji) => <button type="button" key={emoji} aria-label={`Insert ${emoji}`} onClick={() => {
+          setDraft(`${draft}${draft ? " " : ""}${emoji}`);
+          setEmojiOpen(false);
+          emojiButtonRef.current?.focus();
+        }}>{emoji}</button>)}
+      </div>}
+      <form className="composer" onSubmit={onSend}>
+        <button type="button" className="composer-tool" aria-label="Open message tools" aria-expanded={toolsOpen} onClick={() => setToolsOpen(true)}><Icon name="attach" /></button>
+        <input value={draft} onChange={(event) => setDraft(event.target.value)} placeholder={`Message ${chat.name.split(" ")[0]}...`} aria-label="Write a message" />
+        <button ref={emojiButtonRef} type="button" className="composer-tool emoji-tool" aria-label="Choose an emoji" aria-haspopup="true" aria-expanded={emojiOpen} onClick={() => setEmojiOpen((open) => !open)}><Icon name="smile" /></button>
+        <button type="submit" className="send-button" aria-label="Send message" disabled={!draft.trim()}><Icon name="send" size={19} /></button>
+      </form>
+    </div>
     {toolsOpen && <ChatToolsSheet
       contacts={chats}
       onClose={() => setToolsOpen(false)}

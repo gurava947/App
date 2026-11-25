@@ -12,7 +12,10 @@ function CallRow({ entry, onCall }: { entry: CallEntry; onCall: (contactId: stri
   return <div className="call-row">
     <Avatar initials={entry.initials} bg={entry.bg} fg={entry.fg} />
     <span className="call-copy"><strong>{entry.name}</strong><small><Icon name={icon} size={14} className={`call-type ${entry.direction}`} />{detail}</small></span>
-    <button className="icon-button call-action" aria-label={`Call ${entry.name}`} onClick={() => onCall(entry.contactId, entry.kind)}><Icon name={entry.kind === "video" ? "video" : "call"} size={19} /></button>
+    <span className="call-actions">
+      <button className="icon-button call-action" aria-label={`Audio call ${entry.name}`} title={`Audio call ${entry.name}`} onClick={() => onCall(entry.contactId, "voice")}><Icon name="call" size={19} /></button>
+      <button className="icon-button call-action video-call-action" aria-label={`Video call ${entry.name}`} title={`Video call ${entry.name}`} onClick={() => onCall(entry.contactId, "video")}><Icon name="video" size={19} /></button>
+    </span>
   </div>;
 }
 

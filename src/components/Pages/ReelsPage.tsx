@@ -2,7 +2,7 @@ import { useState } from "react";
 import type { ChangeEvent, FormEvent } from "react";
 import { Avatar } from "../Avatar";
 import { Icon } from "../Icon";
-import type { FeedComment, FeedPost } from "../../types";
+import type { Chat, FeedComment, FeedPost } from "../../types";
 import "./Features.css";
 
 function initials(name: string) {
@@ -16,13 +16,14 @@ function authorAction(post: FeedPost, userId: string) {
   return "Connect";
 }
 
-function FeedCard({ post, userId, onLike, onSave, onRepost, onOpenComments, onConnect, onDelete }: {
+function FeedCard({ post, userId, onLike, onSave, onRepost, onOpenComments, onShare, onConnect, onDelete }: {
   post: FeedPost;
   userId: string;
   onLike: (id: string, active: boolean) => void;
   onSave: (id: string, active: boolean) => void;
   onRepost: (id: string, active: boolean) => void;
   onOpenComments: (post: FeedPost) => void;
+  onShare: (post: FeedPost) => void;
   onConnect: (authorId: string) => void;
   onDelete: (postId: string) => void;
 }) {
@@ -42,18 +43,21 @@ function FeedCard({ post, userId, onLike, onSave, onRepost, onOpenComments, onCo
       {!post.media && post.kind === "post" && <div className="feed-text-post">{post.caption}</div>}
     </div>
     <div className="feed-post-actions">
-      <button type="button" className={post.liked ? "is-liked" : ""} aria-pressed={post.liked} onClick={() => onLike(post.id, !post.liked)}><Icon name="heart" size={20} /><span>{post.likeCount}</span></button>
-      <button type="button" onClick={() => onOpenComments(post)}><Icon name="chat" size={20} /><span>{post.commentCount}</span></button>
-      <button type="button" className={post.reposted ? "is-selected" : ""} aria-pressed={post.reposted} onClick={() => onRepost(post.id, !post.reposted)}><Icon name="repost" size={20} /><span>{post.repostCount || "Repost"}</span></button>
+      <button type="button" className={post.liked ? "is-liked" : ""} aria-label={post.liked ? "Unlike post" : "Like post"} aria-pressed={post.liked} onClick={() => onLike(post.id, !post.liked)}><Icon name="heart" size={20} /><span>{post.likeCount}</span></button>
+      <button type="button" aria-label={`View ${post.commentCount} comments`} onClick={() => onOpenComments(post)}><Icon name="chat" size={20} /><span>{post.commentCount}</span></button>
+      <button type="button" className={post.reposted ? "is-selected" : ""} aria-label={post.reposted ? "Undo repost" : "Repost"} aria-pressed={post.reposted} onClick={() => onRepost(post.id, !post.reposted)}><Icon name="repost" size={20} /><span>{post.repostCount || ""}</span></button>
+      <button type="button" aria-label={`Share ${post.kind} by ${post.authorName}`} onClick={() => onShare(post)}><Icon name="share" size={20} /></button>
       <button type="button" className={post.saved ? "is-selected" : ""} aria-pressed={post.saved} onClick={() => onSave(post.id, !post.saved)} aria-label={post.saved ? "Unsave post" : "Save post"}><Icon name="bookmark" size={20} /></button>
     </div>
   </article>;
 }
 
-export function ReelsPage({ feed, userId, onCreatePost, onLike, onSave, onRepost, onComment, onLoadComments, onConnect, onDeletePost, notify }: {
+export function ReelsPage({ feed, chats, userId, onCreatePost, onShare, onLike, onSave, onRepost, onComment, onLoadComments, onConnect, onDeletePost, notify }: {
   feed: FeedPost[];
+  chats: Chat[];
   userId: string;
   onCreatePost: (kind: "post" | "reel", file: File | null, caption: string) => Promise<void>;
+  onShare: (postId: string, contactId: string) => Promise<void>;
   onLike: (id: string, active: boolean) => Promise<void>;
   onSave: (id: string, active: boolean) => Promise<void>;
   onRepost: (id: string, active: boolean) => Promise<void>;
@@ -72,6 +76,8 @@ export function ReelsPage({ feed, userId, onCreatePost, onLike, onSave, onRepost
   const [commentBusy, setCommentBusy] = useState(false);
   const [commentsLoading, setCommentsLoading] = useState(false);
   const [error, setError] = useState("");
+  const [sharingPost, setSharingPost] = useState<FeedPost | null>(null);
+  const [shareBusy, setShareBusy] = useState(false);
 
   const runAction = async (action: () => Promise<void>, successMessage?: string) => {
     try {
@@ -136,6 +142,19 @@ export function ReelsPage({ feed, userId, onCreatePost, onLike, onSave, onRepost
       setCommentsLoading(false);
     }
   };
+  const sharePost = async (chat: Chat) => {
+    if (!sharingPost || shareBusy) return;
+    setShareBusy(true);
+    try {
+      await onShare(sharingPost.id, chat.id);
+      setSharingPost(null);
+      notify(`Shared with ${chat.name}.`);
+    } catch (cause) {
+      notify(cause instanceof Error ? cause.message : "Could not share this post.");
+    } finally {
+      setShareBusy(false);
+    }
+  };
 
   return <section className="page-section feed-page">
     <div className="page-intro"><div><div className="eyebrow">DISCOVER & SHARE</div><h1>Reels & posts</h1><p>Real posts from INChat accounts. Likes, comments and saves sync between both apps.</p></div>
@@ -143,7 +162,7 @@ export function ReelsPage({ feed, userId, onCreatePost, onLike, onSave, onRepost
     </div>
     <div className="feed-layout">
       <div className="reels-feed" aria-label="Posts and reels">
-        {feed.map((post) => <FeedCard key={post.id} post={post} userId={userId} onLike={(id, active) => void runAction(() => onLike(id, active))} onSave={(id, active) => void runAction(() => onSave(id, active))} onRepost={(id, active) => void runAction(() => onRepost(id, active))} onOpenComments={(postToOpen) => void openComments(postToOpen)} onConnect={(id) => void runAction(() => onConnect(id), "Connection request sent.")} onDelete={(id) => void runAction(() => onDeletePost(id))} />)}
+        {feed.map((post) => <FeedCard key={post.id} post={post} userId={userId} onLike={(id, active) => void runAction(() => onLike(id, active))} onSave={(id, active) => void runAction(() => onSave(id, active))} onRepost={(id, active) => void runAction(() => onRepost(id, active))} onOpenComments={(postToOpen) => void openComments(postToOpen)} onShare={setSharingPost} onConnect={(id) => void runAction(() => onConnect(id), "Connection request sent.")} onDelete={(id) => void runAction(() => onDeletePost(id))} />)}
         {feed.length === 0 && <div className="feed-empty surface-card"><span className="empty-search-icon"><Icon name="movie" size={22} /></span><strong>No posts or reels yet</strong><span>Share your first real post or reel. New content will appear here after it is saved.</span><button className="primary-button" type="button" onClick={() => setComposerKind("reel")}>Create a reel</button></div>}
       </div>
       <aside className="feed-privacy-card surface-card"><span className="setting-icon"><Icon name="lock" size={18} /></span><strong>Your connections stay in control</strong><p>Connect sends a request; it never creates an accepted connection by itself. AI generation and external map services stay unavailable until approved.</p></aside>
@@ -160,6 +179,19 @@ export function ReelsPage({ feed, userId, onCreatePost, onLike, onSave, onRepost
         <div className="feed-modal-actions"><button type="button" disabled={busy} onClick={() => setComposerKind(null)}>Cancel</button><button className="primary-button" type="submit" disabled={busy || (composerKind === "reel" && !file)}>{busy ? "Publishing…" : "Share"}</button></div>
         <p className="feed-provider-note">Your media is stored locally. No external AI or map service is contacted.</p>
       </form>
+    </div>}
+
+    {sharingPost && <div className="feed-modal-backdrop" onClick={() => !shareBusy && setSharingPost(null)}>
+      <section className="feed-share-modal" role="dialog" aria-modal="true" aria-labelledby="feed-share-title" onClick={(event) => event.stopPropagation()}>
+        <div className="feed-modal-heading"><div><div className="eyebrow">SHARE INCHAT</div><h2 id="feed-share-title">Send to a chat</h2></div><button type="button" className="icon-button" disabled={shareBusy} aria-label="Close share dialog" onClick={() => setSharingPost(null)}><Icon name="close" /></button></div>
+        {chats.length
+          ? <div className="feed-share-list">{chats.map((chat) => <button type="button" className="feed-share-contact" key={chat.id} disabled={shareBusy} onClick={() => void sharePost(chat)}>
+            <Avatar initials={chat.initials} bg={chat.bg} fg={chat.fg} online={chat.online} className="mini-avatar" />
+            <span><strong>{chat.name}</strong><small>{chat.online ? "Online now" : "Send reel or post"}</small></span>
+            <Icon name="send" size={17} />
+          </button>)}</div>
+          : <p className="feed-share-empty">Accept a connection request first to share posts in a chat.</p>}
+      </section>
     </div>}
 
     {activeComments && <div className="feed-modal-backdrop" onClick={() => setActiveComments(null)}>

@@ -134,12 +134,16 @@ button:disabled { cursor: not-allowed; }
 .message-bubble p { margin: 0; font-size: 11px; line-height: 1.55; overflow-wrap: anywhere; }
 .message-time { margin-top: 5px; display: flex; align-items: center; justify-content: flex-end; gap: 3px; color: #a0aaa3; font-size: 8px; }
 .mine-bubble .message-time { color: rgba(255, 255, 255, .76); }
-.composer { min-height: 62px; flex: 0 0 auto; margin: 0 18px 16px; padding: 7px 8px 7px 12px; display: flex; align-items: center; gap: 9px; border: 1px solid var(--line); border-radius: 16px; background: var(--green-faint); transition: border-color .18s, box-shadow .18s; }
+.composer-wrap { position: relative; flex: 0 0 auto; margin: 0 18px 16px; }
+.composer { min-height: 62px; margin: 0; padding: 7px 8px 7px 12px; display: flex; align-items: center; gap: 9px; border: 1px solid var(--line); border-radius: 16px; background: var(--green-faint); transition: border-color .18s, box-shadow .18s; }
 .composer:focus-within { border-color: rgba(21, 155, 98, .32); box-shadow: 0 0 0 3px rgba(21, 155, 98, .06); }
 .composer input { min-width: 0; flex: 1; border: 0; outline: 0; background: transparent; color: var(--ink); font-size: 11px; }
 .composer input::placeholder { color: #a0aaa3; }
 .composer-tool { width: 27px; height: 32px; flex: 0 0 auto; padding: 0; display: grid; place-items: center; border: 0; border-radius: 8px; color: #95a39a; background: transparent; cursor: pointer; }
 .composer-tool:hover { color: var(--green); background: var(--green-soft); }
+.emoji-picker { position: absolute; z-index: 30; right: 24px; bottom: calc(100% + 8px); width: min(320px, calc(100vw - 36px)); padding: 10px; display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 4px; border: 1px solid var(--line); border-radius: 15px; background: var(--card); box-shadow: var(--shadow); }
+.emoji-picker button { min-width: 0; min-height: 44px; padding: 0; border: 0; border-radius: 9px; background: transparent; font-size: 20px; cursor: pointer; touch-action: manipulation; }
+.emoji-picker button:hover, .emoji-picker button:focus-visible { background: var(--green-soft); }
 .send-button { width: 38px; height: 38px; flex: 0 0 auto; display: grid; place-items: center; border: 0; border-radius: 12px; background: var(--green); color: white; cursor: pointer; transition: transform .16s, background .16s, opacity .16s; }
 .send-button:not(:disabled):hover { transform: translateY(-1px); background: var(--green-deep); }
 .send-button:disabled { opacity: .45; }
@@ -221,7 +225,9 @@ button:disabled { cursor: not-allowed; }
 .empty-call-history { min-height: 125px; display: flex; align-items: center; flex-direction: column; justify-content: center; gap: 6px; color: var(--muted); text-align: center; }
 .empty-call-history strong { color: var(--ink); font-size: 11px; }
 .empty-call-history span { font-size: 10px; }
-.call-action { width: 34px; height: 34px; border: 0; border-radius: 12px; background: var(--green-faint); color: var(--green); }
+.call-actions { display: flex; align-items: center; gap: 6px; }
+.call-action { width: 42px; height: 42px; border: 0; border-radius: 14px; background: var(--green-faint); color: var(--green); touch-action: manipulation; }
+.video-call-action { color: #7182c7; }
 .calls-tip { display: flex; align-items: center; gap: 11px; margin-top: 16px; padding: 14px 16px; border: 1px solid var(--line); border-radius: 15px; background: var(--green-faint); }
 .tip-icon { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 11px; color: var(--green); background: var(--green-soft); }
 .calls-tip > span:last-child { display: flex; flex-direction: column; gap: 3px; }
@@ -427,7 +433,8 @@ button:disabled { cursor: not-allowed; }
   .subtle-action { width: 31px; height: 31px; }
   .more-contact { display: none; }
   .message-area { padding: 14px 14px 18px; gap: 11px; }
-  .composer { min-height: 56px; margin: 0 9px 9px; gap: 6px; padding-left: 8px; }
+  .composer-wrap { margin: 0 9px 9px; }
+  .composer { min-height: 56px; gap: 6px; padding-left: 8px; }
   .composer-tool { width: 25px; }
   .send-button { width: 36px; height: 36px; }
   .bottom-nav { min-height: 66px; gap: 0; justify-content: space-around; padding-left: 9px; padding-right: 9px; border-radius: 17px 17px 0 0; }

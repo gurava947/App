@@ -404,6 +404,25 @@ function messagePayload(message, userId) {
       files: (payload.mediaIds ?? []).map((mediaId) => mediaById(mediaId, userId)).filter(Boolean),
     };
   }
+  if (message.kind === "feed") {
+    const postId = typeof payload.postId === "string" ? payload.postId : "";
+    const post = database.prepare(`
+      SELECT posts.id, posts.kind, posts.body AS caption, posts.media_id AS mediaId,
+        users.name AS authorName
+      FROM posts JOIN users ON users.id = posts.author_id
+      WHERE posts.id = ?
+    `).get(postId);
+    return {
+      kind: "feed",
+      post: post ? {
+        id: post.id,
+        kind: post.kind,
+        authorName: post.authorName,
+        caption: post.caption,
+        media: post.mediaId ? mediaById(post.mediaId, userId) : null,
+      } : null,
+    };
+  }
   if (message.kind === "contact") return { kind: "contact", contact: payload.contact ?? null };
   if (message.kind === "location" && payload.shareId) {
     const share = database.prepare(`
@@ -571,7 +590,7 @@ app.get("/api/bootstrap", (request, response) => {
       name: contact.name,
       email: contact.email,
       initials: initials(contact.name),
-      preview: lastMessage?.text ?? "Start a conversation",
+      preview: lastMessage?.text || (lastMessage?.kind === "feed" ? "Shared a post or reel" : lastMessage ? "Shared media" : "Start a conversation"),
       time: lastMessage ? lastMessage.time : "",
       unread,
       lastReadMessageId: readMarker?.lastReadMessageId ?? 0,
@@ -1220,8 +1239,8 @@ app.post("/api/messages", (request, response) => {
   if (!isConnected(senderId, recipientId)) {
     return response.status(403).json({ error: "Accept this account's connection request before messaging." });
   }
-  if (!["text", "media", "contact", "poll", "event", "location"].includes(kind)) {
-    return response.status(400).json({ error: "kind must be text, media, contact, poll, event, or location." });
+  if (!["text", "media", "contact", "poll", "event", "location", "feed"].includes(kind)) {
+    return response.status(400).json({ error: "kind must be text, media, contact, poll, event, location, or feed." });
   }
   if (kind === "text" && (!body || body.length > 2000)) return response.status(400).json({ error: "Text messages must contain 1–2,000 characters." });
   if (kind !== "text" && body.length > 2000) return response.status(400).json({ error: "Message text must be at most 2,000 characters." });
@@ -1235,6 +1254,12 @@ app.post("/api/messages", (request, response) => {
     if (files.some((file) => !file)) return response.status(404).json({ error: "Every mediaId must be an unshared upload owned by senderId." });
     payload = { mediaIds: [...new Set(mediaIds)] };
     if (payload.mediaIds.length !== mediaIds.length) return response.status(400).json({ error: "Duplicate mediaIds are not allowed." });
+  } else if (kind === "feed") {
+    const postId = typeof payload.postId === "string" ? payload.postId : "";
+    if (!database.prepare("SELECT 1 FROM posts WHERE id = ?").get(postId)) {
+      return response.status(404).json({ error: "The post or reel you are sharing is no longer available." });
+    }
+    payload = { postId };
   } else if (kind === "contact") {
     const contactId = payload.contactId;
     const contact = isValidUser(contactId) && isConnected(senderId, contactId) && isConnected(recipientId, contactId)

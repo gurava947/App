@@ -32,6 +32,19 @@ export function MessageContent({ message, onPollVote, onEventRsvp }: {
         </a>)}
   </div>;
 
+  if (payload.kind === "feed") return <div className="shared-feed-card">
+    {payload.post
+      ? <>
+        {payload.post.media?.mimeType.startsWith("video/") && <video className="shared-feed-media" src={payload.post.media.url} controls playsInline preload="metadata" aria-label={`${payload.post.authorName}'s shared ${payload.post.kind}`} />}
+        {payload.post.media?.mimeType.startsWith("image/") && <img className="shared-feed-media" src={payload.post.media.url} alt={payload.post.caption || `${payload.post.authorName}'s shared post`} loading="lazy" />}
+        <span className="shared-feed-copy">
+          <strong>{payload.post.kind === "reel" ? "Reel" : "Post"} · {payload.post.authorName}</strong>
+          {payload.post.caption && <small>{payload.post.caption}</small>}
+        </span>
+      </>
+      : <span className="shared-feed-copy"><strong>Shared post unavailable</strong><small>The original post or reel is no longer available.</small></span>}
+  </div>;
+
   if (payload.kind === "contact") return <div className="shared-contact-card">
     {payload.contact
       ? <>

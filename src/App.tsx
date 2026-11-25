@@ -415,6 +415,15 @@ function App() {
     await refresh(user.id);
   };
 
+  const shareFeedPost = async (postId: string, contactId: string) => {
+    if (!user) throw new Error("Sign in before sharing a post.");
+    if (!data?.chats.some((chat) => chat.id === contactId)) {
+      throw new Error("Choose an accepted connection to share this post.");
+    }
+    await api.sendMessage(user.id, contactId, "", "feed", { postId });
+    await refresh(user.id);
+  };
+
   const feedAction = async (postId: string, action: "like" | "repost" | "save", active: boolean) => {
     if (!user) return;
     await api.feedAction(postId, user.id, action, active);
@@ -517,7 +526,7 @@ function App() {
     <main className="main-content">
       {page === "Chats" && <ChatsPage chats={filteredChats} calls={data.calls} notes={data.notes} selectedChat={selectedChat} selectedId={selectedId} search={search} setSearch={setSearch} draft={draft} setDraft={setDraft} mobileOpen={mobileChatOpen} pendingRequestCount={data.incomingRequests.length} chatTheme={selectedChatTheme} onSelect={selectChat} onBack={() => setMobileChatOpen(false)} onNewMessage={() => setShowNewMessage(true)} onOpenNotes={() => openPage("Updates")} onSend={sendMessage} onCall={(kind) => selectedChat && void startCall(selectedChat.id, kind)} onPollVote={(pollId, optionId) => void votePoll(pollId, optionId).catch((error: unknown) => notify(error instanceof Error ? error.message : "Could not vote in this poll."))} onEventRsvp={(eventId, response) => void rsvpEvent(eventId, response).catch((error: unknown) => notify(error instanceof Error ? error.message : "Could not update your event response."))} onShareFiles={sendFiles} onShareLocation={shareLocation} onCreatePoll={createPoll} onCreateEvent={createEvent} onShareContact={shareContact} onThemeChange={(theme) => void changeChatTheme(theme)} onClearChat={() => void clearConversation()} />}
       {page === "Updates" && <UpdatesPage user={user} updates={data.updates} notes={data.notes} onAddUpdate={publishUpdate} onCreateNote={createNote} onDeleteUpdate={deleteUpdate} onDeleteNote={deleteNote} notify={notify} />}
-      {page === "Reels" && <ReelsPage feed={data.feed} userId={user.id} onCreatePost={createFeedPost} onLike={(postId, active) => feedAction(postId, "like", active)} onSave={(postId, active) => feedAction(postId, "save", active)} onRepost={(postId, active) => feedAction(postId, "repost", active)} onComment={addFeedComment} onLoadComments={loadFeedComments} onConnect={sendConnectionRequest} onDeletePost={deleteFeedPost} notify={notify} />}
+      {page === "Reels" && <ReelsPage feed={data.feed} chats={data.chats} userId={user.id} onCreatePost={createFeedPost} onShare={shareFeedPost} onLike={(postId, active) => feedAction(postId, "like", active)} onSave={(postId, active) => feedAction(postId, "save", active)} onRepost={(postId, active) => feedAction(postId, "repost", active)} onComment={addFeedComment} onLoadComments={loadFeedComments} onConnect={sendConnectionRequest} onDeletePost={deleteFeedPost} notify={notify} />}
       {page === "Calls" && <CallsPage calls={data.calls} chats={data.chats} onCall={(contactId, kind) => void startCall(contactId, kind)} />}
       {page === "Settings" && <SettingsPage user={user} storage={data.storage} notificationsOn={notificationsOn} darkMode={darkMode} onToggleNotifications={() => void toggleNotifications()} onToggleDarkMode={toggleTheme} onClearStorage={() => void clearStorage()} onSignOut={signOut} />}
     </main>

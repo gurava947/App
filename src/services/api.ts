@@ -12,9 +12,18 @@ function normalizeBootstrap(data: BootstrapData): BootstrapData {
     ...data,
     chats: data.chats.map((chat) => ({
       ...chat,
-      messages: chat.messages.map((message) => message.payload?.kind === "media"
-        ? { ...message, payload: { ...message.payload, files: message.payload.files.map(absoluteMedia) } }
-        : message),
+      messages: chat.messages.map((message) => {
+        if (message.payload?.kind === "media") {
+          return { ...message, payload: { ...message.payload, files: message.payload.files.map(absoluteMedia) } };
+        }
+        if (message.payload?.kind === "feed" && message.payload.post?.media) {
+          return {
+            ...message,
+            payload: { ...message.payload, post: { ...message.payload.post, media: absoluteMedia(message.payload.post.media) } },
+          };
+        }
+        return message;
+      }),
     })),
     feed: data.feed.map((post) => ({ ...post, media: post.media ? absoluteMedia(post.media) : null })),
     updates: data.updates.map((update) => ({ ...update, media: update.media ? absoluteMedia(update.media) : null })),
