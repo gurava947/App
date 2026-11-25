@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import type { ChangeEvent, FormEvent } from "react";
 import { Avatar } from "../Avatar";
 import { Icon } from "../Icon";
@@ -19,7 +19,7 @@ function authorAction(post: FeedPost, userId: string) {
 function FeedCard({ post, userId, onLike, onSave, onRepost, onOpenComments, onShare, onConnect, onDelete }: {
   post: FeedPost;
   userId: string;
-  onLike: (id: string, active: boolean) => void;
+  onLike: (id: string, active: boolean) => Promise<void>;
   onSave: (id: string, active: boolean) => void;
   onRepost: (id: string, active: boolean) => void;
   onOpenComments: (post: FeedPost) => void;
@@ -28,6 +28,22 @@ function FeedCard({ post, userId, onLike, onSave, onRepost, onOpenComments, onSh
   onDelete: (postId: string) => void;
 }) {
   const action = authorAction(post, userId);
+  const [likeBusy, setLikeBusy] = useState(false);
+  const likeBusyRef = useRef(false);
+  const lastLikeClickAt = useRef(0);
+  const toggleLike = async () => {
+    const now = Date.now();
+    if (likeBusyRef.current || now - lastLikeClickAt.current < 400) return;
+    lastLikeClickAt.current = now;
+    likeBusyRef.current = true;
+    setLikeBusy(true);
+    try {
+      await onLike(post.id, !post.liked);
+    } finally {
+      likeBusyRef.current = false;
+      setLikeBusy(false);
+    }
+  };
   return <article className={`feed-post-card${post.kind === "reel" ? " is-reel" : " is-post"}`}>
     <header className="feed-post-header">
       <Avatar initials={initials(post.authorName)} bg="#e2f3e8" fg="#159b62" />
@@ -43,7 +59,7 @@ function FeedCard({ post, userId, onLike, onSave, onRepost, onOpenComments, onSh
       {!post.media && post.kind === "post" && <div className="feed-text-post">{post.caption}</div>}
     </div>
     <div className="feed-post-actions">
-      <button type="button" className={post.liked ? "is-liked" : ""} aria-label={post.liked ? "Unlike post" : "Like post"} aria-pressed={post.liked} onClick={() => onLike(post.id, !post.liked)}><Icon name="heart" size={20} /><span>{post.likeCount}</span></button>
+      <button type="button" className={post.liked ? "is-liked" : ""} aria-label={post.liked ? "Unlike post" : "Like post"} aria-pressed={post.liked} disabled={likeBusy} onClick={() => void toggleLike()}><Icon name="heart" size={20} /><span>{post.likeCount}</span></button>
       <button type="button" aria-label={`View ${post.commentCount} comments`} onClick={() => onOpenComments(post)}><Icon name="chat" size={20} /><span>{post.commentCount}</span></button>
       <button type="button" className={post.reposted ? "is-selected" : ""} aria-label={post.reposted ? "Undo repost" : "Repost"} aria-pressed={post.reposted} onClick={() => onRepost(post.id, !post.reposted)}><Icon name="repost" size={20} /><span>{post.repostCount || ""}</span></button>
       <button type="button" aria-label={`Share ${post.kind} by ${post.authorName}`} onClick={() => onShare(post)}><Icon name="share" size={20} /></button>
@@ -162,7 +178,7 @@ export function ReelsPage({ feed, chats, userId, onCreatePost, onShare, onLike, 
     </div>
     <div className="feed-layout">
       <div className="reels-feed" aria-label="Posts and reels">
-        {feed.map((post) => <FeedCard key={post.id} post={post} userId={userId} onLike={(id, active) => void runAction(() => onLike(id, active))} onSave={(id, active) => void runAction(() => onSave(id, active))} onRepost={(id, active) => void runAction(() => onRepost(id, active))} onOpenComments={(postToOpen) => void openComments(postToOpen)} onShare={setSharingPost} onConnect={(id) => void runAction(() => onConnect(id), "Connection request sent.")} onDelete={(id) => void runAction(() => onDeletePost(id))} />)}
+        {feed.map((post) => <FeedCard key={post.id} post={post} userId={userId} onLike={(id, active) => runAction(() => onLike(id, active))} onSave={(id, active) => void runAction(() => onSave(id, active))} onRepost={(id, active) => void runAction(() => onRepost(id, active))} onOpenComments={(postToOpen) => void openComments(postToOpen)} onShare={setSharingPost} onConnect={(id) => void runAction(() => onConnect(id), "Connection request sent.")} onDelete={(id) => void runAction(() => onDeletePost(id))} />)}
         {feed.length === 0 && <div className="feed-empty surface-card"><span className="empty-search-icon"><Icon name="movie" size={22} /></span><strong>No posts or reels yet</strong><span>Share your first real post or reel. New content will appear here after it is saved.</span><button className="primary-button" type="button" onClick={() => setComposerKind("reel")}>Create a reel</button></div>}
       </div>
       <aside className="feed-privacy-card surface-card"><span className="setting-icon"><Icon name="lock" size={18} /></span><strong>Your connections stay in control</strong><p>Connect sends a request; it never creates an accepted connection by itself. AI generation and external map services stay unavailable until approved.</p></aside>
