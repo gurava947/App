@@ -27,6 +27,8 @@ button, input { font: inherit; }
 button { color: inherit; }
 button:focus-visible, input:focus-visible { outline: 3px solid rgba(21, 155, 98, .28); outline-offset: 2px; }
 button:disabled { cursor: not-allowed; }
+:where(button, a, [role="button"], [role="tab"], [role="switch"]) { -webkit-tap-highlight-color: transparent; }
+:where(button, a, [role="button"], [role="tab"], [role="switch"]):focus:not(:focus-visible) { outline: none; }
 
 .app-shell { min-height: 100vh; background: var(--app-bg); color: var(--ink); transition: background .22s ease, color .22s ease; }
 .app-shell.is-chats-page { height: 100dvh; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
