@@ -1,6 +1,11 @@
 export type Page = "Chats" | "Updates" | "Reels" | "Calls" | "Settings";
 
-export type ChatTheme = "default" | "mint" | "sunset" | "midnight";
+type ChatThemeTile = 1 | 2 | 3 | 4;
+type BubbleThemeCategory = "featured" | "nature" | "live" | "minimal" | "doodle";
+type WallpaperThemeCategory = "featured" | "nature" | "live" | "vibrant" | "gradient" | "colour";
+export type ChatBubbleTheme = `${BubbleThemeCategory}-${ChatThemeTile}`;
+export type ChatWallpaperTheme = "none" | `${WallpaperThemeCategory}-${ChatThemeTile}`;
+export type ChatTheme = { bubble: ChatBubbleTheme; wallpaper: ChatWallpaperTheme };
 
 export type IconName =
   | "search" | "camera" | "more" | "plus" | "chat" | "updates" | "movie"
@@ -9,7 +14,7 @@ export type IconName =
   | "heart" | "eye" | "missed" | "close" | "check" | "phone-out" | "mic" | "micOff"
   | "flipCamera" | "volumeUp" | "volumeOff" | "minimize" | "moreVertical"
   | "noiseSuppression" | "touchUp" | "location" | "poll" | "event" | "image" | "contact" | "document" | "ai"
-  | "repost" | "bookmark" | "edit" | "delete" | "share";
+  | "repost" | "bookmark" | "edit" | "delete" | "share" | "pause";
 
 export type MediaFile = { id: string; name: string; mimeType: string; sizeBytes: number; url: string };
 export type MessageKind = "text" | "media" | "contact" | "poll" | "event" | "location" | "feed";
@@ -63,6 +68,10 @@ export type Chat = {
   preview: string;
   time: string;
   unread: number;
+  lastReadMessageId?: number;
+  lastReadAt?: string | null;
+  peerLastReadMessageId?: number;
+  peerLastReadAt?: string | null;
   bg: string;
   fg: string;
   online?: boolean;

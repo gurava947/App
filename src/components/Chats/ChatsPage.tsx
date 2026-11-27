@@ -1,13 +1,12 @@
 import { ChatSidebar } from "./ChatSidebar";
 import { ConversationPanel } from "./ConversationPanel";
-import { Icon } from "../Icon";
-import type { CallEntry, Chat, ChatTheme, UserNote } from "../../types";
+import type { CallEntry, Chat, ChatTheme, User } from "../../types";
 import "./Chats.css";
 
-export function ChatsPage({ chats, calls, notes, selectedChat, selectedId, search, setSearch, draft, setDraft, mobileOpen, pendingRequestCount, chatTheme, onSelect, onBack, onNewMessage, onOpenNotes, onSend, onCall, onPollVote, onEventRsvp, onShareFiles, onShareLocation, onCreatePoll, onCreateEvent, onShareContact, onThemeChange, onClearChat }: {
+export function ChatsPage({ user, chats, calls, selectedChat, selectedId, search, setSearch, draft, setDraft, mobileOpen, pendingRequestCount, chatTheme, showPresenceStatus, typingUserIds, onTypingChange, onCall, onSelect, onBack, onNewMessage, onSend, onPollVote, onEventRsvp, onShareFiles, onShareLocation, onCreatePoll, onCreateEvent, onShareContact, onThemeChange }: {
+  user: User;
   chats: Chat[];
   calls: CallEntry[];
-  notes: UserNote[];
   selectedChat?: Chat;
   selectedId: string;
   search: string;
@@ -17,12 +16,14 @@ export function ChatsPage({ chats, calls, notes, selectedChat, selectedId, searc
   mobileOpen: boolean;
   pendingRequestCount: number;
   chatTheme: ChatTheme;
+  showPresenceStatus: boolean;
+  typingUserIds: ReadonlySet<string>;
+  onTypingChange: (recipientId: string, typing: boolean) => void;
+  onCall: (contactId: string, kind: "voice" | "video") => void;
   onSelect: (chat: Chat) => void;
   onBack: () => void;
   onNewMessage: () => void;
-  onOpenNotes: () => void;
   onSend: React.FormEventHandler<HTMLFormElement>;
-  onCall: (kind: "voice" | "video") => void;
   onPollVote: (pollId: number, optionId: number) => void;
   onEventRsvp: (eventId: number, response: "going" | "interested" | "not_going") => void;
   onShareFiles: (files: File[]) => Promise<void>;
@@ -30,13 +31,12 @@ export function ChatsPage({ chats, calls, notes, selectedChat, selectedId, searc
   onCreatePoll: (question: string, options: string[]) => Promise<void>;
   onCreateEvent: (event: { title: string; startsAt: string; place: string; description: string }) => Promise<void>;
   onShareContact: (contactId: string) => Promise<void>;
-  onThemeChange: (theme: ChatTheme) => void;
-  onClearChat: () => void;
+  onThemeChange: (theme: ChatTheme) => Promise<void>;
 }) {
   return <section className={`chat-workspace${mobileOpen ? " mobile-chat-open" : ""}`} aria-label="Chats">
-    <ChatSidebar chats={chats} notes={notes} selectedId={selectedId} search={search} setSearch={setSearch} pendingRequestCount={pendingRequestCount} onSelect={onSelect} onNewMessage={onNewMessage} onOpenNotes={onOpenNotes} />
+    <ChatSidebar chats={chats} selectedId={selectedId} search={search} setSearch={setSearch} pendingRequestCount={pendingRequestCount} typingUserIds={typingUserIds} showPresenceStatus={showPresenceStatus} onSelect={onSelect} onNewMessage={onNewMessage} />
     {selectedChat
-      ? <ConversationPanel chat={selectedChat} chats={chats} calls={calls.filter((call) => call.contactId === selectedChat.id)} theme={chatTheme} draft={draft} setDraft={setDraft} onSend={onSend} onBack={onBack} onCall={onCall} onPollVote={onPollVote} onEventRsvp={onEventRsvp} onShareFiles={onShareFiles} onShareLocation={onShareLocation} onCreatePoll={onCreatePoll} onCreateEvent={onCreateEvent} onShareContact={onShareContact} onThemeChange={onThemeChange} onClearChat={onClearChat} />
-      : <div className="conversation-empty"><span className="empty-search-icon"><Icon name="chat" size={20} /></span><strong>No conversations yet</strong><span>Start a chat by sending a connection request. After the other person accepts, open their conversation to send messages.</span><button className="primary-button" type="button" onClick={onNewMessage}>Start a chat</button></div>}
+      ? <ConversationPanel user={user} chat={selectedChat} chats={chats} calls={calls.filter((call) => call.contactId === selectedChat.id)} theme={chatTheme} showPresenceStatus={showPresenceStatus} draft={draft} setDraft={setDraft} isTyping={typingUserIds.has(selectedChat.id)} onTypingChange={onTypingChange} onCall={onCall} onSend={onSend} onBack={onBack} onPollVote={onPollVote} onEventRsvp={onEventRsvp} onShareFiles={onShareFiles} onShareLocation={onShareLocation} onCreatePoll={onCreatePoll} onCreateEvent={onCreateEvent} onShareContact={onShareContact} onThemeChange={onThemeChange} />
+      : null}
   </section>;
 }

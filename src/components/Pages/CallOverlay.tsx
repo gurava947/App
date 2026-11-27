@@ -3,6 +3,7 @@ import { Avatar } from "../Avatar";
 import { Icon } from "../Icon";
 
 type CallOverlayProps = {
+  peerOnline: boolean;
   call: {
     peerName: string;
     kind: "voice" | "video";
@@ -68,6 +69,7 @@ function AudioSetting({ title, description, checked, supported, disabled, icon, 
 }
 
 export function CallOverlay({
+  peerOnline,
   call,
   localStream,
   remoteStream,
@@ -128,7 +130,7 @@ export function CallOverlay({
   const status = call.status === "incoming"
     ? `Incoming ${call.kind} call`
     : call.status === "outgoing"
-      ? "Ringing…"
+      ? peerOnline ? "Ringing…" : "Waiting for them to come online…"
       : call.status === "connected"
         ? formatDuration(call.elapsedSeconds)
         : "Contacting…";
@@ -154,6 +156,10 @@ export function CallOverlay({
         <span className="call-kind-label">{call.kind === "video" ? "Video call" : "Audio call"}</span>
         <button className="call-top-icon" type="button" aria-label="Call settings" aria-expanded={settingsOpen} onClick={() => setSettingsOpen(true)}><Icon name="moreVertical" size={23} /></button>
       </header>
+      <div className={`call-presence${peerOnline ? " is-online" : " is-offline"}`} role="status" aria-live="polite" aria-atomic="true">
+        <span className="presence-indicator" aria-hidden="true" />
+        <span>This person is {peerOnline ? "online" : "offline"}</span>
+      </div>
 
       <div className={`call-stage${call.kind === "video" ? " video-stage" : " audio-stage"}${remoteStream ? " has-remote-media" : ""}`}>
         {call.kind === "video" && remoteStream

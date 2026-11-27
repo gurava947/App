@@ -17,11 +17,10 @@ export function NewMessageModal({ directory, incomingRequests, search, setSearch
   const filteredDirectory = directory.filter((person) => `${person.name} ${person.email}`.toLowerCase().includes(needle));
   const filteredRequests = incomingRequests.filter((request) => `${request.senderName} ${request.senderEmail}`.toLowerCase().includes(needle));
 
-  return <div className="modal-backdrop" onClick={onClose}>
-    <section className="new-message-modal" role="dialog" aria-modal="true" aria-labelledby="new-message-title" onClick={(event) => event.stopPropagation()}>
+  return <section className="connection-search-page" aria-labelledby="new-message-title">
       <div className="modal-head">
+        <button className="icon-button connection-search-back" type="button" aria-label="Back to chats" onClick={onClose}><Icon name="back" /></button>
         <div><div className="eyebrow">CONNECTIONS</div><h2 id="new-message-title">Find people</h2></div>
-        <button className="icon-button modal-close" aria-label="Close" onClick={onClose}><Icon name="close" /></button>
       </div>
       <label className="modal-search"><Icon name="search" size={18} /><input autoFocus value={search} placeholder="Search by name or email" onChange={(event) => setSearch(event.target.value)} /></label>
       {filteredRequests.length > 0 && <section className="connection-request-section" aria-label="Incoming connection requests">
@@ -49,6 +48,5 @@ export function NewMessageModal({ directory, incomingRequests, search, setSearch
         </div>)}
         {filteredDirectory.length === 0 && <div className="modal-empty">{directory.length ? "No people match your search." : "When another account signs in, you can find and request them here."}</div>}
       </div>
-    </section>
-  </div>;
+  </section>;
 }

@@ -107,7 +107,7 @@ export const api = {
     body: JSON.stringify({ userId, text }),
   }),
   deleteNote: (noteId: string, userId: string) => request<{ deleted: boolean }>(`/notes/${encodeURIComponent(noteId)}?userId=${encodeURIComponent(userId)}`, { method: "DELETE" }),
-  markChatRead: (userId: string, contactId: string) => request<{ markedRead: boolean }>(`/chats/${encodeURIComponent(contactId)}/read`, {
+  markChatRead: (userId: string, contactId: string) => request<{ contactId: string; lastReadMessageId: number; updatedAt: string }>(`/chats/${encodeURIComponent(contactId)}/read`, {
     method: "POST",
     body: JSON.stringify({ userId }),
   }),

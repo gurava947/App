@@ -281,7 +281,7 @@ export function useCallSession(user: User | null, onHistoryChanged: () => void, 
       if (activeCallRef.current?.id !== event.callId) return;
       releaseMedia();
       if (event.status === "missed") onProblem("No answer. This call was saved as missed.");
-      else if (event.status === "declined") onProblem("The other account declined the call.");
+      else if (event.status === "declined") onProblem("The other account did not answer. This call was saved as missed.");
       else if (event.status === "failed") onProblem("The call ended because the peer-to-peer connection failed.");
       else if (event.status === "cancelled") onProblem("The other account cancelled the call.");
       onHistoryChanged();
@@ -309,10 +309,13 @@ export function useCallSession(user: User | null, onHistoryChanged: () => void, 
   const startCall = useCallback(async (recipientId: string, peerName: string, kind: CallKind) => {
     if (activeCallRef.current || startingRef.current) throw new Error("Finish the current call before starting another.");
     startingRef.current = true;
+    let callId: string | null = null;
     try {
       await waitForSocket();
-      if (!navigator.mediaDevices?.getUserMedia) throw new Error("Microphone and camera access is unavailable in this browser.");
       setCallError("");
+      const result = await emitWithAck<{ callId: string; status: "ringing" }>("call:start", { recipientId, kind });
+      callId = result.callId;
+      if (!navigator.mediaDevices?.getUserMedia) throw new Error("Microphone and camera access is unavailable in this browser.");
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: audioTrackConstraints(noiseSuppression, audioTouchUp, audioSettingsSupport),
         video: kind === "video",
@@ -322,7 +325,6 @@ export function useCallSession(user: User | null, onHistoryChanged: () => void, 
       setCameraEnabled(kind === "video");
       setCameraFacings(cameraModes(stream));
       setCameraFacing(stream.getVideoTracks()[0]?.getSettings().facingMode === "environment" ? "environment" : "user");
-      const result = await emitWithAck<{ callId: string }>("call:start", { recipientId, kind });
       const call: CallView = {
         id: result.callId,
         peerId: recipientId,
@@ -338,12 +340,13 @@ export function useCallSession(user: User | null, onHistoryChanged: () => void, 
       await emitWithAck<{ ready: boolean }>("call:ready", { callId: call.id });
       onHistoryChanged();
     } catch (error) {
+      if (callId) socketRef.current?.emit("call:end", { callId, status: "failed" });
       releaseMedia();
       throw error;
     } finally {
       startingRef.current = false;
     }
-  }, [audioSettingsSupport, audioTouchUp, createPeer, emitWithAck, noiseSuppression, onHistoryChanged, releaseMedia, waitForSocket]);
+  }, [audioSettingsSupport, audioTouchUp, createPeer, emitWithAck, noiseSuppression, onHistoryChanged, onProblem, releaseMedia, waitForSocket]);
 
   const acceptCall = useCallback(async () => {
     const call = activeCallRef.current;

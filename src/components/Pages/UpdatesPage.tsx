@@ -43,6 +43,10 @@ export function UpdatesPage({ user, updates, notes, onAddUpdate, onCreateNote, o
     }
     return [...groups.entries()].map(([authorId, items]) => ({ authorId, items, authorName: items[0].authorName, initials: items[0].initials ?? initials(items[0].authorName) }));
   }, [updates]);
+  const ownStoryGroup = storyGroups.find((group) => group.authorId === user.id);
+  const orderedStoryGroups = ownStoryGroup
+    ? [ownStoryGroup, ...storyGroups.filter((group) => group.authorId !== user.id)]
+    : storyGroups;
   const activeGroup = storyGroups.find((group) => group.authorId === storyAuthor);
   const activeStory = activeGroup?.items[storyIndex];
 
@@ -99,37 +103,26 @@ export function UpdatesPage({ user, updates, notes, onAddUpdate, onCreateNote, o
   };
 
   return <section className="page-section updates-page">
-    <div className="page-intro"><div><div className="eyebrow">LITTLE MOMENTS</div><h1>Updates</h1><p>Share a story or a short note with your connected people.</p></div>
-      <div className="feed-create-actions"><button className="secondary-button" type="button" onClick={() => setNoteOpen(true)}><Icon name="edit" size={17} /> Add note</button><button className="primary-button" type="button" onClick={() => { setError(""); setComposerOpen(true); }}><Icon name="plus" size={18} /> Add update</button></div>
-    </div>
-
-    <div className="surface-card statuses-card">
-      <div className="section-label"><div><h2>Recent updates</h2><p>Stories expire automatically after 24 hours.</p></div></div>
+    <div className="updates-content">
       <div className="status-list">
-        <button className="status-card add-status" type="button" onClick={() => { setError(""); setComposerOpen(true); }}>
-          <span className="status-ring own-ring"><Avatar initials={initials(user.name)} bg="#e9f7ef" fg="#159b62" className="status-avatar" /></span>
-          <span className="status-plus"><Icon name="plus" size={14} /></span><strong>Your update</strong><small>Share a moment</small>
+        <button className={`status-card add-status${ownStoryGroup ? " has-own-update" : ""}`} type="button" onClick={() => { setError(""); setComposerOpen(true); }}>
+          <span className="status-ring own-ring"><Avatar initials={initials(user.name)} bg="#e9f7ef" fg="#159b62" className="status-avatar" /><span className="status-plus"><Icon name="plus" size={15} /></span></span>
+          <strong>Your update</strong><small>{ownStoryGroup ? "Add another moment" : "Share a moment"}</small>
         </button>
-        {storyGroups.map((group) => <button className="status-card" type="button" key={group.authorId} onClick={() => { setStoryAuthor(group.authorId); setStoryIndex(0); }}>
-          <span className={`status-ring${group.authorId === user.id ? " own-ring" : ""}`}><Avatar initials={group.initials} bg="#e2f3e8" fg="#159b62" className="status-avatar" /></span>
+        {orderedStoryGroups.map((group) => <button className="status-card" type="button" key={group.authorId} onClick={() => { setStoryAuthor(group.authorId); setStoryIndex(0); }}>
+          <span className={`status-ring${group.authorId === user.id ? " has-stories" : ""}`}><Avatar initials={group.initials} bg="#e2f3e8" fg="#159b62" className="status-avatar" /></span>
           <strong>{group.authorId === user.id ? "Your story" : group.authorName}</strong><small>{group.items.length} update{group.items.length === 1 ? "" : "s"}</small>
         </button>)}
       </div>
-      {storyGroups.length === 0 && <div className="updates-empty"><strong>No recent updates</strong><span>When you or your connections post a story, it will appear here.</span></div>}
-    </div>
-
-    <div className="surface-card notes-card">
-      <div className="section-label"><div><h2>Notes</h2><p>Short thoughts that disappear after 24 hours.</p></div><button className="text-button" type="button" onClick={() => setNoteOpen(true)}>Write a note</button></div>
-      <div className="notes-list">
+      {notes.length > 0 && <div className="notes-list" aria-label="Recent notes">
         {notes.map((note) => <article className={`note-card${note.authorId === user.id ? " own-note" : ""}`} key={note.id}>
           <Avatar initials={note.initials ?? initials(note.authorName)} bg="#e2f3e8" fg="#159b62" className="note-avatar" />
           <span className="note-bubble"><strong>{note.authorId === user.id ? "You" : note.authorName}</strong><span>{note.text}</span><small>{formattedExpiry(note.expiresAt)}</small>{note.authorId === user.id && <button className="delete-note-button" type="button" aria-label="Delete your note" onClick={() => { if (window.confirm("Delete this note?")) void onDeleteNote(note.id).catch((cause: unknown) => notify(cause instanceof Error ? cause.message : "Could not delete this note.")); }}><Icon name="delete" size={14} /></button>}</span>
         </article>)}
-        {notes.length === 0 && <div className="notes-empty">No active notes yet. Add one to start a conversation.</div>}
-      </div>
+      </div>}
     </div>
 
-    <input ref={fileInput} className="visually-hidden" type="file" accept="image/*,video/*" onChange={selectUpdateFile} aria-label="Choose a story photo or video" />
+    <input ref={fileInput} className="visually-hidden" type="file" accept="image/*,video/*" onChange={selectUpdateFile} tabIndex={-1} aria-hidden="true" />
 
     {composerOpen && <div className="feed-modal-backdrop" onClick={() => !busy && setComposerOpen(false)}>
       <form className="feed-composer-modal" role="dialog" aria-modal="true" aria-labelledby="update-composer-title" onSubmit={(event) => { event.preventDefault(); fileInput.current?.click(); }} onClick={(event) => event.stopPropagation()}>
@@ -141,7 +134,7 @@ export function UpdatesPage({ user, updates, notes, onAddUpdate, onCreateNote, o
       </form>
     </div>}
 
-    {noteOpen && <div className="feed-modal-backdrop" onClick={() => !busy && setNoteOpen(false)}>
+    {noteOpen && <div className="feed-modal-backdrop note-composer-backdrop" onClick={() => !busy && setNoteOpen(false)}>
       <form className="feed-composer-modal" role="dialog" aria-modal="true" aria-labelledby="note-composer-title" onSubmit={submitNote} onClick={(event) => event.stopPropagation()}>
         <div className="feed-modal-heading"><div><div className="eyebrow">24-HOUR NOTE</div><h2 id="note-composer-title">Share a note</h2></div><button type="button" className="icon-button" disabled={busy} aria-label="Close note composer" onClick={() => setNoteOpen(false)}><Icon name="close" /></button></div>
         <label className="feed-caption-label">Your note<textarea value={noteText} onChange={(event) => setNoteText(event.target.value)} maxLength={120} rows={3} required placeholder="What’s on your mind?" /></label>

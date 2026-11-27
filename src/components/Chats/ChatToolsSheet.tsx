@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ChangeEvent, FormEvent } from "react";
 import { Avatar } from "../Avatar";
 import { Icon } from "../Icon";
@@ -28,6 +28,22 @@ export function ChatToolsSheet({ contacts, onClose, onFile, onLocation, onPoll, 
   const galleryInput = useRef<HTMLInputElement>(null);
   const cameraInput = useRef<HTMLInputElement>(null);
   const documentInput = useRef<HTMLInputElement>(null);
+  const closeButton = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    closeButton.current?.focus();
+    return () => { document.body.style.overflow = previousOverflow; };
+  }, []);
+
+  useEffect(() => {
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !busy) onClose();
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [busy, onClose]);
 
   const run = async (action: () => Promise<void>) => {
     setError("");
@@ -70,24 +86,24 @@ export function ChatToolsSheet({ contacts, onClose, onFile, onLocation, onPoll, 
     }));
   };
 
-  return <div className="chat-tools-backdrop" onClick={onClose}>
-    <section className="chat-tools-sheet" role="dialog" aria-modal="true" aria-labelledby="chat-tools-title" onClick={(event) => event.stopPropagation()}>
+  return <div className="chat-tools-backdrop" onClick={() => { if (!busy) onClose(); }}>
+    <section className="chat-tools-sheet" role="dialog" aria-modal="true" aria-busy={busy} aria-labelledby="chat-tools-title" onClick={(event) => event.stopPropagation()}>
       <div className="chat-tools-handle" />
       <header className="chat-tools-header">
         <div><div className="eyebrow">SHARE PRIVATELY</div><h2 id="chat-tools-title">{mode === "menu" ? "Message tools" : mode === "location" ? "Share location" : mode === "contact" ? "Share a contact" : mode === "poll" ? "Create a poll" : "Create an event"}</h2></div>
-        <button type="button" className="icon-button" aria-label="Close message tools" onClick={onClose}><Icon name="close" /></button>
+        <button ref={closeButton} type="button" className="icon-button" aria-label="Close message tools" title="Close" disabled={busy} onClick={onClose}><Icon name="close" /></button>
       </header>
 
       {mode === "menu" && <>
         <div className="chat-tools-grid">
-          <button type="button" onClick={() => galleryInput.current?.click()}><Icon name="image" /><span>Gallery</span></button>
-          <button type="button" onClick={() => cameraInput.current?.click()}><Icon name="camera" /><span>Camera</span></button>
-          <button type="button" onClick={() => setMode("location")}><Icon name="location" /><span>Location</span></button>
-          <button type="button" onClick={() => setMode("contact")}><Icon name="contact" /><span>Contact</span></button>
-          <button type="button" onClick={() => documentInput.current?.click()}><Icon name="document" /><span>Document</span></button>
-          <button type="button" onClick={() => setMode("poll")}><Icon name="poll" /><span>Poll</span></button>
-          <button type="button" onClick={() => setMode("event")}><Icon name="event" /><span>Event</span></button>
-          <button type="button" disabled title="AI provider approval is required"><Icon name="ai" /><span>AI images</span><small>Approval required</small></button>
+          <button type="button" aria-label="Gallery" title="Gallery" disabled={busy} onClick={() => galleryInput.current?.click()}><Icon name="image" size={23} /></button>
+          <button type="button" aria-label="Camera" title="Camera" disabled={busy} onClick={() => cameraInput.current?.click()}><Icon name="camera" size={23} /></button>
+          <button type="button" aria-label="Location" title="Location" disabled={busy} onClick={() => setMode("location")}><Icon name="location" size={23} /></button>
+          <button type="button" aria-label="Contact" title="Contact" disabled={busy} onClick={() => setMode("contact")}><Icon name="contact" size={23} /></button>
+          <button type="button" aria-label="Document" title="Document" disabled={busy} onClick={() => documentInput.current?.click()}><Icon name="document" size={23} /></button>
+          <button type="button" aria-label="Poll" title="Poll" disabled={busy} onClick={() => setMode("poll")}><Icon name="poll" size={23} /></button>
+          <button type="button" aria-label="Event" title="Event" disabled={busy} onClick={() => setMode("event")}><Icon name="event" size={23} /></button>
+          <button type="button" aria-label="AI images (approval required)" title="AI images require an approved provider" disabled><Icon name="ai" size={23} /></button>
         </div>
         <p className="chat-tools-privacy">Files are stored on this device’s local INChat service. Maps and AI providers are not contacted.</p>
       </>}
@@ -115,6 +131,7 @@ export function ChatToolsSheet({ contacts, onClose, onFile, onLocation, onPoll, 
           <Icon name="chevron" size={18} />
         </button>)}
         {contacts.length === 0 && <p className="chat-tools-empty">No connected contacts are available to share.</p>}
+        <div className="chat-tools-actions"><button type="button" disabled={busy} onClick={() => setMode("menu")}>Back</button></div>
       </div>}
 
       {mode === "poll" && <form className="chat-tools-form" onSubmit={submitPoll}>

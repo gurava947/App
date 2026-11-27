@@ -1,15 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { ChangeEvent, FormEvent } from "react";
+import type { FormEvent, TouchEvent } from "react";
 import { io } from "socket.io-client";
+import type { Socket } from "socket.io-client";
 import { BottomNav, Topbar } from "./components/Layout";
 import { ChatsPage, NewMessageModal } from "./components/Chats";
 import { CallOverlay, CallsPage, LoginPage, ReelsPage, SettingsPage, UpdatesPage } from "./components/Pages";
 import { Icon } from "./components/Icon";
 import { api, realtimeUrl } from "./services/api";
 import { useCallSession } from "./hooks/useCallSession";
+import { defaultChatTheme } from "./data/chatThemes";
 import type { Chat, ChatTheme, MessageKind, MessagePayloadInput, Page, User } from "./types";
 
 const userStorageKey = "inchat-local-user";
+const presenceStatusStorageKey = (userId: string) => `inchat-show-presence-${userId}`;
 type ActiveLocationShare = { id: string; contactId: string; contactName: string; senderId: string; expiresAt: string; watchId: number | null };
 
 function currentPosition(): Promise<GeolocationPosition> {
@@ -57,8 +60,12 @@ function App() {
   const [draft, setDraft] = useState("");
   const [notificationsOn, setNotificationsOn] = useState(() => user ? localStorage.getItem(`inchat-notifications-${user.id}`) === "true" : false);
   const [darkMode, setDarkMode] = useState(() => user ? localStorage.getItem(`inchat-theme-${user.id}`) === "dark" : false);
+  const [showPresenceStatus, setShowPresenceStatus] = useState(() => user ? localStorage.getItem(presenceStatusStorageKey(user.id)) !== "false" : true);
   const [mobileChatOpen, setMobileChatOpen] = useState(false);
-  const fileInput = useRef<HTMLInputElement>(null);
+  const [typingUserIds, setTypingUserIds] = useState<Set<string>>(() => new Set());
+  const socketRef = useRef<Socket | null>(null);
+  const typingExpiryTimersRef = useRef(new Map<string, number>());
+  const pageSwipeStart = useRef<{ x: number; y: number } | null>(null);
   const [liveLocation, setLiveLocation] = useState<ActiveLocationShare | null>(null);
   const liveLocationRef = useRef<ActiveLocationShare | null>(null);
   const locationExpiryTimer = useRef<number | null>(null);
@@ -82,6 +89,9 @@ function App() {
     if (user) void refresh(user.id);
   }, [refresh, user]);
   const callSession = useCallSession(user, refreshCurrentUser, notify);
+  const emitTyping = useCallback((recipientId: string, typing: boolean) => {
+    socketRef.current?.emit("chat:typing", { recipientId, typing });
+  }, []);
 
   useEffect(() => {
     if (!user) {
@@ -123,7 +133,35 @@ function App() {
 
     load();
     const socket = io(realtimeUrl, { query: { userId: user.id } });
+    socketRef.current = socket;
     socket.on("connect", load);
+    socket.on("chat:typing", (event: { senderId?: unknown; recipientId?: unknown; typing?: unknown }) => {
+      if (typeof event.senderId !== "string" || event.recipientId !== user.id || typeof event.typing !== "boolean") return;
+      const senderId = event.senderId;
+      const existingTimer = typingExpiryTimersRef.current.get(senderId);
+      if (existingTimer !== undefined) {
+        window.clearTimeout(existingTimer);
+        typingExpiryTimersRef.current.delete(senderId);
+      }
+      setTypingUserIds((current) => {
+        const next = new Set(current);
+        if (event.typing) next.add(senderId);
+        else next.delete(senderId);
+        return next;
+      });
+      if (event.typing) {
+        const timer = window.setTimeout(() => {
+          typingExpiryTimersRef.current.delete(senderId);
+          setTypingUserIds((current) => {
+            if (!current.has(senderId)) return current;
+            const next = new Set(current);
+            next.delete(senderId);
+            return next;
+          });
+        }, 3200);
+        typingExpiryTimersRef.current.set(senderId, timer);
+      }
+    });
     socket.on("data:changed", (event: { type?: string; recipientId?: string; body?: string }) => {
       load();
       if (event.type === "message" && event.recipientId === user.id && document.hidden && notificationsOn && "Notification" in window && Notification.permission === "granted") {
@@ -137,18 +175,46 @@ function App() {
     socket.on("connect_error", () => setServerError("Could not connect to the shared local service on port 3005."));
     return () => {
       active = false;
+      if (socketRef.current === socket) socketRef.current = null;
+      for (const timer of typingExpiryTimersRef.current.values()) window.clearTimeout(timer);
+      typingExpiryTimersRef.current.clear();
+      setTypingUserIds(new Set());
       socket.disconnect();
     };
   }, [user, notificationsOn, notify, setActiveLocation]);
 
-  const openPage = (next: Page) => { setPage(next); setSearch(""); setMobileChatOpen(false); };
+  const openPage = (next: Page) => { setPage(next); setSearch(""); setMobileChatOpen(false); setShowNewMessage(false); };
+  const startPageSwipe = (event: TouchEvent<HTMLElement>) => {
+    const target = event.target;
+    if (showNewMessage || (page === "Chats" && mobileChatOpen)
+      || (target instanceof Element && target.closest("button, input, textarea, select, a, video, [role='dialog'], .status-list, .chat-list, .message-area, .reels-feed"))) {
+      pageSwipeStart.current = null;
+      return;
+    }
+    const touch = event.changedTouches[0];
+    pageSwipeStart.current = { x: touch.clientX, y: touch.clientY };
+  };
+  const finishPageSwipe = (event: TouchEvent<HTMLElement>) => {
+    const start = pageSwipeStart.current;
+    pageSwipeStart.current = null;
+    if (!start) return;
+    const touch = event.changedTouches[0];
+    const deltaX = touch.clientX - start.x;
+    const deltaY = touch.clientY - start.y;
+    if (Math.abs(deltaX) < 85 || Math.abs(deltaX) < Math.abs(deltaY) * 1.35) return;
+    const pages: Page[] = ["Chats", "Updates", "Reels", "Calls", "Settings"];
+    const currentIndex = pages.indexOf(page);
+    const nextIndex = Math.max(0, Math.min(pages.length - 1, currentIndex + (deltaX < 0 ? 1 : -1)));
+    if (nextIndex !== currentIndex) openPage(pages[nextIndex]);
+  };
   const selectedChat = data?.chats.find((chat) => chat.id === selectedId);
-  const selectedChatTheme: ChatTheme = data?.chatPreferences.find((preference) => preference.contactId === selectedId)?.theme ?? "default";
+  const selectedChatLastMessageId = selectedChat?.messages[selectedChat.messages.length - 1]?.id;
+  const selectedChatTheme: ChatTheme = data?.chatPreferences.find((preference) => preference.contactId === selectedId)?.theme ?? defaultChatTheme;
   const unreadMessageCount = data?.chats.reduce((total, chat) => total + chat.unread, 0) ?? 0;
   useEffect(() => {
     if (!user || page !== "Chats" || !selectedChat) return;
     void api.markChatRead(user.id, selectedChat.id).catch((error: unknown) => notify(error instanceof Error ? error.message : "Could not mark this conversation as read."));
-  }, [notify, page, selectedChat?.id, user?.id]);
+  }, [notify, page, selectedChat?.id, selectedChatLastMessageId, user?.id]);
 
   useEffect(() => () => {
     const active = liveLocationRef.current;
@@ -172,6 +238,7 @@ function App() {
     localStorage.setItem(userStorageKey, JSON.stringify(result.user));
     setNotificationsOn(localStorage.getItem(`inchat-notifications-${result.user.id}`) === "true");
     setDarkMode(localStorage.getItem(`inchat-theme-${result.user.id}`) === "dark");
+    setShowPresenceStatus(localStorage.getItem(presenceStatusStorageKey(result.user.id)) !== "false");
     setUser(result.user);
     setPage("Chats");
     setServerError("");
@@ -303,26 +370,16 @@ function App() {
   };
 
   const changeChatTheme = async (theme: ChatTheme) => {
-    if (!user || !selectedChat) return;
-    try {
-      await api.setChatTheme(user.id, selectedChat.id, theme);
-      await refresh(user.id);
-      notify("Chat theme saved.");
-    } catch (error) {
-      notify(error instanceof Error ? error.message : "Could not save this chat theme.");
-    }
-  };
-
-  const clearConversation = async () => {
-    if (!user || !selectedChat) return;
-    if (!window.confirm(`Delete the messages and shared files with ${selectedChat.name}? Call history, account identities, and connections will be kept.`)) return;
-    try {
-      await api.clearChat(user.id, selectedChat.id);
-      await refresh(user.id);
-      notify(`Conversation with ${selectedChat.name} cleared.`);
-    } catch (error) {
-      notify(error instanceof Error ? error.message : "Could not clear this conversation.");
-    }
+    if (!user || !selectedChat) throw new Error("Open a connected conversation before changing its theme.");
+    const saved = await api.setChatTheme(user.id, selectedChat.id, theme);
+    setData((current) => current ? {
+      ...current,
+      chatPreferences: [
+        { contactId: saved.contactId, theme: saved.theme, updatedAt: saved.updatedAt },
+        ...current.chatPreferences.filter((preference) => preference.contactId !== saved.contactId),
+      ],
+    } : current);
+    notify("Chat theme saved.");
   };
 
   const sendConnectionRequest = async (recipientId: string) => {
@@ -367,8 +424,8 @@ function App() {
   const startCall = (contactId: string, kind: "voice" | "video") => {
     if (!user) return;
     const contact = data?.chats.find((chat) => chat.id === contactId);
-    if (!contact?.online) {
-      notify("That account is offline. Ask them to open INChat before calling.");
+    if (!contact) {
+      notify("This connection is no longer available.");
       return;
     }
     void callSession.startCall(contactId, contact.name, kind).catch((error: unknown) => notify(error instanceof Error ? error.message : "Could not start this call."));
@@ -448,12 +505,6 @@ function App() {
     await refresh(user.id);
   };
 
-  const onFileSelected = (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.currentTarget.files?.[0];
-    event.currentTarget.value = "";
-    if (file) void publishUpdate(file, "").then(() => notify("Update shared.")).catch((error: unknown) => notify(error instanceof Error ? error.message : "Could not share this update."));
-  };
-
   const markAllRead = async () => {
     if (!user) return;
     try {
@@ -492,6 +543,13 @@ function App() {
     localStorage.setItem(`inchat-theme-${user.id}`, next ? "dark" : "light");
   };
 
+  const togglePresenceStatus = () => {
+    if (!user) return;
+    const next = !showPresenceStatus;
+    setShowPresenceStatus(next);
+    localStorage.setItem(presenceStatusStorageKey(user.id), String(next));
+  };
+
   const clearStorage = async () => {
     const accountId = user?.id;
     if (!accountId) return;
@@ -519,18 +577,21 @@ function App() {
     <div className="loading-card"><span className="brand-mark">IN</span><strong>{serverError || "Connecting to shared INChat storage…"}</strong><button className="primary-button" onClick={() => void refresh(user.id)}>Retry connection</button><button className="text-button" onClick={signOut}>Sign out</button></div>
   </div>;
 
-  return <div className={`app-shell${darkMode ? " theme-dark" : ""}${page === "Chats" ? " is-chats-page" : ""}${page === "Chats" && mobileChatOpen ? " is-mobile-chat" : ""}`}>
-    <Topbar showMore={showMore} setShowMore={setShowMore} onFileSelected={onFileSelected} markAllRead={() => void markAllRead()} notify={notify} onHome={() => openPage("Chats")} unreadCount={unreadMessageCount} />
+  return <div className={`app-shell is-authenticated${darkMode ? " theme-dark" : ""}${page === "Chats" ? " is-chats-page" : ""}${page === "Chats" && mobileChatOpen ? " is-mobile-chat" : ""}`}>
+    <Topbar showMore={showMore} setShowMore={setShowMore} markAllRead={() => void markAllRead()} notify={notify} onHome={() => openPage("Chats")} unreadCount={unreadMessageCount} />
     {serverError && <div className="connection-banner" role="alert">{serverError}</div>}
     {liveLocation && <div className="live-location-bar" role="status"><Icon name="location" size={17} /><span>{liveLocation.senderId === user.id ? <>Sharing live location with <strong>{liveLocation.contactName}</strong></> : <><strong>{liveLocation.contactName}</strong> is sharing live location with you</>} until {new Date(liveLocation.expiresAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</span>{liveLocation.senderId === user.id && <button type="button" onClick={() => void stopLiveLocationShare().then(() => notify("Live location sharing stopped.")).catch((error: unknown) => notify(error instanceof Error ? error.message : "Could not stop live location sharing."))}>Stop sharing</button>}</div>}
-    <main className="main-content">
-      {page === "Chats" && <ChatsPage chats={filteredChats} calls={data.calls} notes={data.notes} selectedChat={selectedChat} selectedId={selectedId} search={search} setSearch={setSearch} draft={draft} setDraft={setDraft} mobileOpen={mobileChatOpen} pendingRequestCount={data.incomingRequests.length} chatTheme={selectedChatTheme} onSelect={selectChat} onBack={() => setMobileChatOpen(false)} onNewMessage={() => setShowNewMessage(true)} onOpenNotes={() => openPage("Updates")} onSend={sendMessage} onCall={(kind) => selectedChat && void startCall(selectedChat.id, kind)} onPollVote={(pollId, optionId) => void votePoll(pollId, optionId).catch((error: unknown) => notify(error instanceof Error ? error.message : "Could not vote in this poll."))} onEventRsvp={(eventId, response) => void rsvpEvent(eventId, response).catch((error: unknown) => notify(error instanceof Error ? error.message : "Could not update your event response."))} onShareFiles={sendFiles} onShareLocation={shareLocation} onCreatePoll={createPoll} onCreateEvent={createEvent} onShareContact={shareContact} onThemeChange={(theme) => void changeChatTheme(theme)} onClearChat={() => void clearConversation()} />}
+    <main className="main-content" onTouchStart={startPageSwipe} onTouchEnd={finishPageSwipe} onTouchCancel={() => { pageSwipeStart.current = null; }}>
+      {page === "Chats" && (showNewMessage
+        ? <NewMessageModal directory={data.directory} incomingRequests={data.incomingRequests} search={newMessageSearch} setSearch={setNewMessageSearch} onClose={() => { setShowNewMessage(false); setNewMessageSearch(""); }} onChoose={openConnection} onRequest={sendConnectionRequest} onAccept={acceptConnectionRequest} onDecline={declineConnectionRequest} />
+        : <ChatsPage user={user} chats={filteredChats} calls={data.calls} selectedChat={selectedChat} selectedId={selectedId} search={search} setSearch={setSearch} draft={draft} setDraft={setDraft} mobileOpen={mobileChatOpen} pendingRequestCount={data.incomingRequests.length} chatTheme={selectedChatTheme} showPresenceStatus={showPresenceStatus} typingUserIds={typingUserIds} onTypingChange={emitTyping} onCall={(contactId, kind) => startCall(contactId, kind)} onSelect={selectChat} onBack={() => setMobileChatOpen(false)} onNewMessage={() => { setNewMessageSearch(""); setShowNewMessage(true); }} onSend={sendMessage} onPollVote={(pollId, optionId) => void votePoll(pollId, optionId).catch((error: unknown) => notify(error instanceof Error ? error.message : "Could not vote in this poll."))} onEventRsvp={(eventId, response) => void rsvpEvent(eventId, response).catch((error: unknown) => notify(error instanceof Error ? error.message : "Could not update your event response."))} onShareFiles={sendFiles} onShareLocation={shareLocation} onCreatePoll={createPoll} onCreateEvent={createEvent} onShareContact={shareContact} onThemeChange={(theme) => changeChatTheme(theme)} />)}
       {page === "Updates" && <UpdatesPage user={user} updates={data.updates} notes={data.notes} onAddUpdate={publishUpdate} onCreateNote={createNote} onDeleteUpdate={deleteUpdate} onDeleteNote={deleteNote} notify={notify} />}
       {page === "Reels" && <ReelsPage feed={data.feed} chats={data.chats} userId={user.id} onCreatePost={createFeedPost} onShare={shareFeedPost} onLike={(postId, active) => feedAction(postId, "like", active)} onSave={(postId, active) => feedAction(postId, "save", active)} onRepost={(postId, active) => feedAction(postId, "repost", active)} onComment={addFeedComment} onLoadComments={loadFeedComments} onConnect={sendConnectionRequest} onDeletePost={deleteFeedPost} notify={notify} />}
-      {page === "Calls" && <CallsPage calls={data.calls} chats={data.chats} onCall={(contactId, kind) => void startCall(contactId, kind)} />}
-      {page === "Settings" && <SettingsPage user={user} storage={data.storage} notificationsOn={notificationsOn} darkMode={darkMode} onToggleNotifications={() => void toggleNotifications()} onToggleDarkMode={toggleTheme} onClearStorage={() => void clearStorage()} onSignOut={signOut} />}
+      {page === "Calls" && <CallsPage calls={data.calls} onCall={(contactId, kind) => void startCall(contactId, kind)} />}
+      {page === "Settings" && <SettingsPage user={user} storage={data.storage} notificationsOn={notificationsOn} darkMode={darkMode} showPresenceStatus={showPresenceStatus} onToggleNotifications={() => void toggleNotifications()} onToggleDarkMode={toggleTheme} onTogglePresenceStatus={togglePresenceStatus} onClearStorage={() => void clearStorage()} onSignOut={signOut} />}
     </main>
     {callSession.activeCall && <CallOverlay
+      peerOnline={Boolean(data.chats.find((chat) => chat.id === callSession.activeCall?.peerId)?.online)}
       call={callSession.activeCall}
       localStream={callSession.localStream}
       remoteStream={callSession.remoteStream}
@@ -550,10 +611,8 @@ function App() {
       onToggleAudioTouchUp={callSession.toggleAudioTouchUp}
       onError={notify}
     />}
-    <input ref={fileInput} className="visually-hidden" type="file" accept="image/*,video/*" onChange={onFileSelected} aria-label="Choose a status photo or video" />
     <BottomNav page={page} onNavigate={openPage} />
     {toast && <div className="toast" role="status"><span className="toast-check"><Icon name="check" size={15} /></span>{toast}</div>}
-    {showNewMessage && <NewMessageModal directory={data.directory} incomingRequests={data.incomingRequests} search={newMessageSearch} setSearch={setNewMessageSearch} onClose={() => setShowNewMessage(false)} onChoose={openConnection} onRequest={sendConnectionRequest} onAccept={acceptConnectionRequest} onDecline={declineConnectionRequest} />}
   </div>;
 }
 

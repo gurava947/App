@@ -25,6 +25,7 @@ const ligatures: Record<IconName, string> = {
   storage: "database",
   chevron: "chevron_right",
   play: "play_arrow",
+  pause: "pause",
   heart: "favorite",
   eye: "visibility",
   missed: "call_missed_outgoing",

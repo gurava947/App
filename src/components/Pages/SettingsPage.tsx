@@ -26,18 +26,20 @@ function SettingRow({ icon, title, description, trailing, onClick }: { icon: Ico
   </div>;
 }
 
-export function SettingsPage({ user, storage, notificationsOn, darkMode, onToggleNotifications, onToggleDarkMode, onClearStorage, onSignOut }: {
+export function SettingsPage({ user, storage, notificationsOn, darkMode, showPresenceStatus, onToggleNotifications, onToggleDarkMode, onTogglePresenceStatus, onClearStorage, onSignOut }: {
   user: User;
   storage: StorageInfo;
   notificationsOn: boolean;
   darkMode: boolean;
+  showPresenceStatus: boolean;
   onToggleNotifications: () => void;
   onToggleDarkMode: () => void;
+  onTogglePresenceStatus: () => void;
   onClearStorage: () => void;
   onSignOut: () => void;
 }) {
   return <section className="page-section settings-page">
-    <div className="page-intro"><div><div className="eyebrow">MAKE IT YOURS</div><h1>Settings</h1><p>Your local account and app preferences.</p></div></div>
+    <div className="page-intro"><div><h1>Settings</h1></div></div>
     <div className="settings-profile surface-card">
       <Avatar initials={initials(user.name)} bg="#e2f3e8" fg="#159b62" className="profile-avatar" />
       <span className="profile-details"><strong>{user.name}</strong><small>{user.email}</small></span>
@@ -48,6 +50,7 @@ export function SettingsPage({ user, storage, notificationsOn, darkMode, onToggl
         <div className="settings-group-title">PREFERENCES</div>
         <SettingRow icon="bell" title="Notifications" description="Browser alerts for incoming messages" trailing={<Toggle checked={notificationsOn} onClick={onToggleNotifications} label="Toggle notifications" />} />
         <SettingRow icon="palette" title="Appearance" description="Switch between dark and light mode" trailing={<Toggle checked={darkMode} onClick={onToggleDarkMode} label="Toggle dark mode" />} />
+        <SettingRow icon="eye" title="Chat presence" description="Show online/offline status in chats on this device" trailing={<Toggle checked={showPresenceStatus} onClick={onTogglePresenceStatus} label="Toggle chat presence status" />} />
       </div>
       <div className="settings-group surface-card">
         <div className="settings-group-title">ACCOUNT & STORAGE</div>

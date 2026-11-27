@@ -1,5 +1,5 @@
-import { useRef, useState } from "react";
-import type { ChangeEvent, FormEvent } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import type { ChangeEvent, FormEvent, PointerEvent as ReactPointerEvent } from "react";
 import { Avatar } from "../Avatar";
 import { Icon } from "../Icon";
 import type { Chat, FeedComment, FeedPost } from "../../types";
@@ -9,6 +9,10 @@ function initials(name: string) {
   return name.trim().split(/\s+/).slice(0, 2).map((part) => part[0]?.toUpperCase() ?? "").join("");
 }
 
+function formatCount(count: number) {
+  return new Intl.NumberFormat(undefined, { notation: "compact", maximumFractionDigits: 1 }).format(count);
+}
+
 function authorAction(post: FeedPost, userId: string) {
   if (post.authorId === userId || post.connectionStatus === "connected") return null;
   if (post.connectionStatus === "outgoing") return "Requested";
@@ -16,7 +20,7 @@ function authorAction(post: FeedPost, userId: string) {
   return "Connect";
 }
 
-function FeedCard({ post, userId, onLike, onSave, onRepost, onOpenComments, onShare, onConnect, onDelete }: {
+function FeedCard({ post, userId, onLike, onSave, onRepost, onOpenComments, onShare, onConnect, onDelete, onOpenReel }: {
   post: FeedPost;
   userId: string;
   onLike: (id: string, active: boolean) => Promise<void>;
@@ -26,6 +30,7 @@ function FeedCard({ post, userId, onLike, onSave, onRepost, onOpenComments, onSh
   onShare: (post: FeedPost) => void;
   onConnect: (authorId: string) => void;
   onDelete: (postId: string) => void;
+  onOpenReel: (post: FeedPost) => void;
 }) {
   const action = authorAction(post, userId);
   const [likeBusy, setLikeBusy] = useState(false);
@@ -53,7 +58,12 @@ function FeedCard({ post, userId, onLike, onSave, onRepost, onOpenComments, onSh
       {post.authorId === userId && <button className="feed-delete-button" type="button" aria-label="Delete your post" onClick={() => onDelete(post.id)}><Icon name="delete" size={18} /></button>}
     </header>
     <div className="feed-post-body">
-      {post.media?.mimeType.startsWith("video/") && <video className="feed-post-media" src={post.media.url} controls playsInline preload="metadata" aria-label={`${post.authorName}'s ${post.kind}`} />}
+      {post.media?.mimeType.startsWith("video/") && (post.kind === "reel"
+        ? <button className="feed-reel-preview" type="button" aria-label={`Open ${post.authorName}'s reel`} onClick={() => onOpenReel(post)}>
+          <video className="feed-post-media" src={post.media.url} muted playsInline preload="metadata" aria-hidden="true" />
+          <span className="feed-reel-open-indicator"><Icon name="play" size={28} /></span>
+        </button>
+        : <video className="feed-post-media" src={post.media.url} controls playsInline preload="metadata" aria-label={`${post.authorName}'s ${post.kind}`} />)}
       {post.media?.mimeType.startsWith("image/") && <img className="feed-post-media" src={post.media.url} alt={post.caption || `${post.authorName}'s post`} loading="lazy" />}
       {post.caption && <p className="feed-post-caption">{post.caption}</p>}
       {!post.media && post.kind === "post" && <div className="feed-text-post">{post.caption}</div>}
@@ -66,6 +76,215 @@ function FeedCard({ post, userId, onLike, onSave, onRepost, onOpenComments, onSh
       <button type="button" className={post.saved ? "is-selected" : ""} aria-pressed={post.saved} onClick={() => onSave(post.id, !post.saved)} aria-label={post.saved ? "Unsave post" : "Save post"}><Icon name="bookmark" size={20} /></button>
     </div>
   </article>;
+}
+
+function ReelViewerCard({ post, isActive, onLike, onSave, onOpenComments, onShare, notify }: {
+  post: FeedPost;
+  isActive: boolean;
+  onLike: (id: string, active: boolean) => Promise<void>;
+  onSave: (id: string, active: boolean) => void;
+  onOpenComments: (post: FeedPost) => void;
+  onShare: (post: FeedPost) => void;
+  notify: (message: string) => void;
+}) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const pointerStart = useRef<{ x: number; y: number } | null>(null);
+  const lastTap = useRef<{ x: number; y: number; at: number } | null>(null);
+  const likeBusyRef = useRef(false);
+  const heartTimer = useRef<number | null>(null);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [muted, setMuted] = useState(true);
+  const [likeBusy, setLikeBusy] = useState(false);
+  const [heartBurst, setHeartBurst] = useState(false);
+  const [playbackMessage, setPlaybackMessage] = useState("");
+
+  useEffect(() => {
+    if (videoRef.current) videoRef.current.muted = muted;
+  }, [muted]);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    if (!isActive) {
+      video.pause();
+      setIsPlaying(false);
+      return;
+    }
+    void video.play()
+      .then(() => { setIsPlaying(true); setPlaybackMessage(""); })
+      .catch(() => { setIsPlaying(false); setPlaybackMessage("Tap play to start this reel."); });
+  }, [isActive, post.media?.url]);
+
+  useEffect(() => () => {
+    if (heartTimer.current !== null) window.clearTimeout(heartTimer.current);
+  }, []);
+
+  const updateLike = async (active: boolean) => {
+    if (likeBusyRef.current || post.liked === active) return;
+    likeBusyRef.current = true;
+    setLikeBusy(true);
+    try {
+      await onLike(post.id, active);
+    } catch (cause) {
+      notify(cause instanceof Error ? cause.message : "Could not update this reel's like.");
+    } finally {
+      likeBusyRef.current = false;
+      setLikeBusy(false);
+    }
+  };
+  const showHeart = () => {
+    setHeartBurst(true);
+    if (heartTimer.current !== null) window.clearTimeout(heartTimer.current);
+    heartTimer.current = window.setTimeout(() => {
+      setHeartBurst(false);
+      heartTimer.current = null;
+    }, 750);
+    if (!post.liked) void updateLike(true);
+  };
+  const handlePointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (event.target instanceof Element && event.target.closest("button")) {
+      pointerStart.current = null;
+      return;
+    }
+    pointerStart.current = { x: event.clientX, y: event.clientY };
+  };
+  const handlePointerUp = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const start = pointerStart.current;
+    pointerStart.current = null;
+    if (!start || (event.target instanceof Element && event.target.closest("button"))) {
+      lastTap.current = null;
+      return;
+    }
+    const moved = Math.hypot(event.clientX - start.x, event.clientY - start.y);
+    if (moved > 18) {
+      lastTap.current = null;
+      return;
+    }
+    const previousTap = lastTap.current;
+    const now = Date.now();
+    if (previousTap && now - previousTap.at <= 330 && Math.hypot(event.clientX - previousTap.x, event.clientY - previousTap.y) <= 56) {
+      lastTap.current = null;
+      showHeart();
+    } else {
+      lastTap.current = { x: event.clientX, y: event.clientY, at: now };
+    }
+  };
+  const togglePlayback = () => {
+    const video = videoRef.current;
+    if (!video) return;
+    if (video.paused) {
+      void video.play()
+        .then(() => { setIsPlaying(true); setPlaybackMessage(""); })
+        .catch(() => { setIsPlaying(false); setPlaybackMessage("Tap play to start this reel."); });
+    } else {
+      video.pause();
+      setIsPlaying(false);
+    }
+  };
+
+  return <section className="reel-viewer-item" aria-label={`Reel by ${post.authorName}`}>
+    <div className="reel-viewer-frame">
+      <div className="reel-viewer-media-area" onPointerDown={handlePointerDown} onPointerUp={handlePointerUp} onPointerCancel={() => { pointerStart.current = null; lastTap.current = null; }}>
+        {post.media?.mimeType.startsWith("video/") && <video
+          ref={videoRef}
+          className="reel-viewer-media"
+          src={post.media.url}
+          muted={muted}
+          loop
+          playsInline
+          preload="metadata"
+          aria-label={`${post.authorName}'s reel`}
+          onPlay={() => { setIsPlaying(true); setPlaybackMessage(""); }}
+          onPause={() => setIsPlaying(false)}
+          onError={() => setPlaybackMessage("This reel could not be loaded.")}
+        />}
+        {post.media?.mimeType.startsWith("image/") && <img className="reel-viewer-media" src={post.media.url} alt={post.caption || `${post.authorName}'s reel`} />}
+        {!post.media && <div className="reel-viewer-unavailable">This reel has no media.</div>}
+        {heartBurst && <span className="reel-viewer-heart-burst" aria-hidden="true"><Icon name="heart" size={88} /></span>}
+      </div>
+      <div className="reel-viewer-gradient" aria-hidden="true" />
+      <div className="reel-viewer-author">
+        <Avatar initials={initials(post.authorName)} bg="#e2f3e8" fg="#159b62" className="mini-avatar" />
+        <span><strong>{post.authorName}</strong><small>{new Date(post.createdAt).toLocaleDateString([], { month: "short", day: "numeric" })}</small></span>
+      </div>
+      <div className="reel-viewer-actions" aria-label="Reel actions">
+        <button type="button" className="reel-viewer-action" aria-label={isPlaying ? "Pause reel" : "Play reel"} onClick={togglePlayback}><Icon name={isPlaying ? "pause" : "play"} size={27} /></button>
+        {post.media?.mimeType.startsWith("video/") && <button type="button" className="reel-viewer-action" aria-label={muted ? "Unmute reel" : "Mute reel"} aria-pressed={!muted} onClick={() => setMuted((value) => !value)}><Icon name={muted ? "volumeOff" : "volumeUp"} size={24} /></button>}
+        <button type="button" className={`reel-viewer-action reel-viewer-like${post.liked ? " is-liked" : ""}`} aria-label={post.liked ? "Unlike reel" : "Like reel"} aria-pressed={post.liked} disabled={likeBusy} onClick={() => void updateLike(!post.liked)}><Icon name="heart" size={28} /><span>{formatCount(post.likeCount)}</span></button>
+        <button type="button" className="reel-viewer-action" aria-label={`View ${post.commentCount} comments`} onClick={() => onOpenComments(post)}><Icon name="chat" size={25} /><span>{formatCount(post.commentCount)}</span></button>
+        <button type="button" className="reel-viewer-action" aria-label={`Share reel by ${post.authorName}`} onClick={() => onShare(post)}><Icon name="share" size={24} /></button>
+        <button type="button" className={`reel-viewer-action${post.saved ? " is-saved" : ""}`} aria-label={post.saved ? "Unsave reel" : "Save reel"} aria-pressed={post.saved} onClick={() => onSave(post.id, !post.saved)}><Icon name="bookmark" size={24} /></button>
+      </div>
+      <div className="reel-viewer-caption">
+        {post.caption && <p>{post.caption}</p>}
+        {playbackMessage && <span className="reel-viewer-playback-message" role="status">{playbackMessage}</span>}
+      </div>
+    </div>
+  </section>;
+}
+
+function ReelViewer({ reels, initialPostId, onClose, onLike, onSave, onOpenComments, onShare, notify }: {
+  reels: FeedPost[];
+  initialPostId: string;
+  onClose: () => void;
+  onLike: (id: string, active: boolean) => Promise<void>;
+  onSave: (id: string, active: boolean) => void;
+  onOpenComments: (post: FeedPost) => void;
+  onShare: (post: FeedPost) => void;
+  notify: (message: string) => void;
+}) {
+  const feedRef = useRef<HTMLDivElement>(null);
+  const reelRefs = useRef(new Map<string, HTMLElement>());
+  const [activeReelId, setActiveReelId] = useState(initialPostId);
+
+  useLayoutEffect(() => {
+    const feedElement = feedRef.current;
+    const reelElement = reelRefs.current.get(initialPostId);
+    if (!feedElement || !reelElement) return;
+    feedElement.scrollTop = reelElement.offsetTop;
+    setActiveReelId(initialPostId);
+  }, [initialPostId]);
+
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [onClose]);
+
+  const updateActiveReel = () => {
+    const feedElement = feedRef.current;
+    if (!feedElement || !feedElement.clientHeight) return;
+    const index = Math.max(0, Math.min(reels.length - 1, Math.round(feedElement.scrollTop / feedElement.clientHeight)));
+    const nextId = reels[index]?.id;
+    if (nextId) setActiveReelId((current) => current === nextId ? current : nextId);
+  };
+
+  return <div className="reel-viewer-backdrop" role="dialog" aria-modal="true" aria-label="Reel viewer">
+    <button className="reel-viewer-close" type="button" aria-label="Close reels" onClick={onClose}><Icon name="close" size={25} /></button>
+    <div className="reel-viewer-feed" ref={feedRef} tabIndex={0} aria-label="Scroll through reels" onScroll={updateActiveReel} onKeyDown={(event) => {
+      if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+      event.preventDefault();
+      feedRef.current?.scrollBy({ top: (event.key === "ArrowDown" ? 1 : -1) * (feedRef.current.clientHeight || window.innerHeight), behavior: "smooth" });
+    }}>
+      {reels.map((post) => <div
+        key={post.id}
+        ref={(element) => {
+          if (element) reelRefs.current.set(post.id, element);
+          else reelRefs.current.delete(post.id);
+        }}
+        data-reel-id={post.id}
+      >
+        <ReelViewerCard post={post} isActive={activeReelId === post.id} onLike={onLike} onSave={(id, active) => void onSave(id, active)} onOpenComments={onOpenComments} onShare={onShare} notify={notify} />
+      </div>)}
+    </div>
+  </div>;
 }
 
 export function ReelsPage({ feed, chats, userId, onCreatePost, onShare, onLike, onSave, onRepost, onComment, onLoadComments, onConnect, onDeletePost, notify }: {
@@ -83,17 +302,17 @@ export function ReelsPage({ feed, chats, userId, onCreatePost, onShare, onLike, 
   onDeletePost: (postId: string) => Promise<void>;
   notify: (message: string) => void;
 }) {
-  const [composerKind, setComposerKind] = useState<"post" | "reel" | null>(null);
-  const [file, setFile] = useState<File | null>(null);
-  const [caption, setCaption] = useState("");
-  const [busy, setBusy] = useState(false);
+  const reelFileInput = useRef<HTMLInputElement>(null);
+  const [publishingReel, setPublishingReel] = useState(false);
+  const [activeReelId, setActiveReelId] = useState<string | null>(null);
   const [activeComments, setActiveComments] = useState<FeedPost | null>(null);
   const [commentDraft, setCommentDraft] = useState("");
   const [commentBusy, setCommentBusy] = useState(false);
   const [commentsLoading, setCommentsLoading] = useState(false);
-  const [error, setError] = useState("");
   const [sharingPost, setSharingPost] = useState<FeedPost | null>(null);
   const [shareBusy, setShareBusy] = useState(false);
+  const reels = feed.filter((post) => post.kind === "reel");
+  const closeReelViewer = useCallback(() => setActiveReelId(null), []);
 
   const runAction = async (action: () => Promise<void>, successMessage?: string) => {
     try {
@@ -101,31 +320,6 @@ export function ReelsPage({ feed, chats, userId, onCreatePost, onShare, onLike, 
       if (successMessage) notify(successMessage);
     } catch (cause) {
       notify(cause instanceof Error ? cause.message : "The action could not be completed.");
-    }
-  };
-  const submitPost = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    if (!composerKind) return;
-    if (composerKind === "reel" && (!file || !file.type.startsWith("video/"))) {
-      setError("Choose a video to create a reel.");
-      return;
-    }
-    if (composerKind === "post" && !file && !caption.trim()) {
-      setError("Add text or choose a photo or video.");
-      return;
-    }
-    setBusy(true);
-    setError("");
-    try {
-      await onCreatePost(composerKind, file, caption.trim());
-      setComposerKind(null);
-      setFile(null);
-      setCaption("");
-      notify(composerKind === "reel" ? "Reel shared." : "Post shared.");
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Could not publish this post.");
-    } finally {
-      setBusy(false);
     }
   };
   const submitComment = async (event: FormEvent<HTMLFormElement>) => {
@@ -142,9 +336,24 @@ export function ReelsPage({ feed, chats, userId, onCreatePost, onShare, onLike, 
       setCommentBusy(false);
     }
   };
-  const selectFile = (event: ChangeEvent<HTMLInputElement>) => {
-    setFile(event.currentTarget.files?.[0] ?? null);
+  const selectReelFile = (event: ChangeEvent<HTMLInputElement>) => {
+    const selectedFile = event.currentTarget.files?.[0] ?? null;
     event.currentTarget.value = "";
+    if (!selectedFile) return;
+    if (!selectedFile.type.startsWith("video/")) {
+      notify("Choose a video to create a reel.");
+      return;
+    }
+    setPublishingReel(true);
+    void onCreatePost("reel", selectedFile, "")
+      .then(() => notify("Reel shared."))
+      .catch((cause: unknown) => notify(cause instanceof Error ? cause.message : "Could not publish this reel."))
+      .finally(() => setPublishingReel(false));
+  };
+  const chooseReelVideo = () => {
+    if (publishingReel) return;
+    if (reelFileInput.current) reelFileInput.current.value = "";
+    reelFileInput.current?.click();
   };
   const openComments = async (post: FeedPost) => {
     setActiveComments({ ...post, comments: [] });
@@ -173,29 +382,31 @@ export function ReelsPage({ feed, chats, userId, onCreatePost, onShare, onLike, 
   };
 
   return <section className="page-section feed-page">
-    <div className="page-intro"><div><div className="eyebrow">DISCOVER & SHARE</div><h1>Reels & posts</h1><p>Real posts from INChat accounts. Likes, comments and saves sync between both apps.</p></div>
-      <div className="feed-create-actions"><button className="secondary-button" type="button" onClick={() => { setComposerKind("post"); setError(""); }}><Icon name="edit" size={17} /> New post</button><button className="primary-button" type="button" onClick={() => { setComposerKind("reel"); setError(""); }}><Icon name="movie" size={17} /> Create reel</button></div>
+    <div className="reels-toolbar" aria-label="Create content">
+      <button className="icon-button round-page-action primary-round-action" type="button" aria-label={publishingReel ? "Publishing reel" : "Choose a video from gallery"} title={publishingReel ? "Publishing reel" : "Create a reel from gallery"} disabled={publishingReel} onClick={chooseReelVideo}><Icon name="movie" size={19} /></button>
     </div>
+    <input ref={reelFileInput} className="visually-hidden" type="file" accept="video/*" onChange={selectReelFile} tabIndex={-1} aria-hidden="true" />
     <div className="feed-layout">
       <div className="reels-feed" aria-label="Posts and reels">
-        {feed.map((post) => <FeedCard key={post.id} post={post} userId={userId} onLike={(id, active) => runAction(() => onLike(id, active))} onSave={(id, active) => void runAction(() => onSave(id, active))} onRepost={(id, active) => void runAction(() => onRepost(id, active))} onOpenComments={(postToOpen) => void openComments(postToOpen)} onShare={setSharingPost} onConnect={(id) => void runAction(() => onConnect(id), "Connection request sent.")} onDelete={(id) => void runAction(() => onDeletePost(id))} />)}
-        {feed.length === 0 && <div className="feed-empty surface-card"><span className="empty-search-icon"><Icon name="movie" size={22} /></span><strong>No posts or reels yet</strong><span>Share your first real post or reel. New content will appear here after it is saved.</span><button className="primary-button" type="button" onClick={() => setComposerKind("reel")}>Create a reel</button></div>}
+        {feed.length
+          ? feed.map((post) => <FeedCard key={post.id} post={post} userId={userId} onLike={(id, active) => runAction(() => onLike(id, active))} onSave={(id, active) => void runAction(() => onSave(id, active))} onRepost={(id, active) => void runAction(() => onRepost(id, active))} onOpenComments={(postToOpen) => void openComments(postToOpen)} onShare={setSharingPost} onConnect={(id) => void runAction(() => onConnect(id), "Connection request sent.")} onDelete={(id) => void runAction(() => onDeletePost(id))} onOpenReel={(postToOpen) => setActiveReelId(postToOpen.id)} />)
+          : <div className="feed-empty-state reels-empty-state" role="status">
+            <span className="empty-search-icon"><Icon name="movie" size={22} /></span>
+            <strong>No reels yet</strong>
+          </div>}
       </div>
-      <aside className="feed-privacy-card surface-card"><span className="setting-icon"><Icon name="lock" size={18} /></span><strong>Your connections stay in control</strong><p>Connect sends a request; it never creates an accepted connection by itself. AI generation and external map services stay unavailable until approved.</p></aside>
     </div>
 
-    {composerKind && <div className="feed-modal-backdrop" onClick={() => !busy && setComposerKind(null)}>
-      <form className="feed-composer-modal" role="dialog" aria-modal="true" aria-labelledby="feed-composer-title" onSubmit={submitPost} onClick={(event) => event.stopPropagation()}>
-        <div className="feed-modal-heading"><div><div className="eyebrow">SHARE WITH INCHAT</div><h2 id="feed-composer-title">{composerKind === "reel" ? "Create a reel" : "Write a post"}</h2></div><button type="button" className="icon-button" disabled={busy} aria-label="Close composer" onClick={() => setComposerKind(null)}><Icon name="close" /></button></div>
-        <label className="feed-file-select"> {file ? `Selected: ${file.name}` : composerKind === "reel" ? "Choose a video" : "Add a photo or video (optional)"}
-          <input type="file" accept={composerKind === "reel" ? "video/*" : "image/*,video/*"} required={composerKind === "reel"} onChange={selectFile} />
-        </label>
-        <label className="feed-caption-label">Caption<textarea value={caption} onChange={(event) => setCaption(event.target.value)} maxLength={1200} rows={4} placeholder="Write something for your people…" /></label>
-        {error && <p className="feed-error" role="alert">{error}</p>}
-        <div className="feed-modal-actions"><button type="button" disabled={busy} onClick={() => setComposerKind(null)}>Cancel</button><button className="primary-button" type="submit" disabled={busy || (composerKind === "reel" && !file)}>{busy ? "Publishing…" : "Share"}</button></div>
-        <p className="feed-provider-note">Your media is stored locally. No external AI or map service is contacted.</p>
-      </form>
-    </div>}
+    {activeReelId && reels.length > 0 && <ReelViewer
+      reels={reels}
+      initialPostId={activeReelId}
+      onClose={closeReelViewer}
+      onLike={onLike}
+      onSave={(id, active) => void runAction(() => onSave(id, active))}
+      onOpenComments={(postToOpen) => void openComments(postToOpen)}
+      onShare={setSharingPost}
+      notify={notify}
+    />}
 
     {sharingPost && <div className="feed-modal-backdrop" onClick={() => !shareBusy && setSharingPost(null)}>
       <section className="feed-share-modal" role="dialog" aria-modal="true" aria-labelledby="feed-share-title" onClick={(event) => event.stopPropagation()}>

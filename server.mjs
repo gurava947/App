@@ -9,6 +9,29 @@ import { Server } from "socket.io";
 const port = Number(process.env.INCHAT_PORT ?? 3005);
 const databasePath = resolve(process.env.INCHAT_DB_PATH ?? "data/inchat.sqlite");
 const uploadsDirectory = resolve(process.env.INCHAT_UPLOAD_DIR ?? "data/uploads");
+const validBubbleThemes = new Set([
+  "featured-1", "featured-2", "featured-3", "featured-4",
+  "nature-1", "nature-2", "nature-3", "nature-4",
+  "live-1", "live-2", "live-3", "live-4",
+  "minimal-1", "minimal-2", "minimal-3", "minimal-4",
+  "doodle-1", "doodle-2", "doodle-3", "doodle-4",
+]);
+const validWallpaperThemes = new Set([
+  "none",
+  "featured-1", "featured-2", "featured-3", "featured-4",
+  "nature-1", "nature-2", "nature-3", "nature-4",
+  "live-1", "live-2", "live-3", "live-4",
+  "vibrant-1", "vibrant-2", "vibrant-3", "vibrant-4",
+  "gradient-1", "gradient-2", "gradient-3", "gradient-4",
+  "colour-1", "colour-2", "colour-3",
+]);
+const defaultChatTheme = { bubble: "featured-1", wallpaper: "none" };
+const legacyChatThemes = {
+  default: defaultChatTheme,
+  mint: { bubble: "minimal-3", wallpaper: "none" },
+  sunset: { bubble: "nature-2", wallpaper: "gradient-4" },
+  midnight: { bubble: "live-3", wallpaper: "live-3" },
+};
 mkdirSync(resolve(databasePath, ".."), { recursive: true });
 
 const database = new DatabaseSync(databasePath);
@@ -66,8 +89,9 @@ if (!callColumns.has("status")) database.exec("ALTER TABLE calls ADD COLUMN stat
 if (!callColumns.has("accepted_at")) database.exec("ALTER TABLE calls ADD COLUMN accepted_at TEXT");
 if (!callColumns.has("ended_at")) database.exec("ALTER TABLE calls ADD COLUMN ended_at TEXT");
 if (!callColumns.has("duration_seconds")) database.exec("ALTER TABLE calls ADD COLUMN duration_seconds INTEGER NOT NULL DEFAULT 0");
-database.prepare("UPDATE calls SET status = 'missed', ended_at = COALESCE(ended_at, ?) WHERE status = 'ringing'").run(new Date().toISOString());
-database.prepare("UPDATE calls SET status = 'failed', ended_at = COALESCE(ended_at, ?) WHERE status = 'active'").run(new Date().toISOString());
+const serverRestartedAt = new Date().toISOString();
+database.prepare("UPDATE calls SET status = 'missed', ended_at = COALESCE(ended_at, ?) WHERE status = 'ringing'").run(serverRestartedAt);
+database.prepare("UPDATE calls SET status = 'completed', ended_at = COALESCE(ended_at, ?) WHERE status = 'active'").run(serverRestartedAt);
 
 const messageColumns = new Set(database.prepare("PRAGMA table_info(messages)").all().map((column) => column.name));
 if (!messageColumns.has("content_type")) database.exec("ALTER TABLE messages ADD COLUMN content_type TEXT NOT NULL DEFAULT 'text'");
@@ -194,18 +218,29 @@ database.exec(`
 
 const app = express();
 const httpServer = createServer(app);
+const lanHost = process.env.INCHAT_LAN_HOST?.trim();
+if (lanHost) {
+  const octets = lanHost.split(".").map(Number);
+  const isPrivateIpv4 = octets.length === 4
+    && octets.every((octet) => Number.isInteger(octet) && octet >= 0 && octet <= 255)
+    && (octets[0] === 10
+      || (octets[0] === 172 && octets[1] >= 16 && octets[1] <= 31)
+      || (octets[0] === 192 && octets[1] === 168));
+  if (!isPrivateIpv4) throw new Error("INCHAT_LAN_HOST must be a private IPv4 address.");
+}
 const allowedOrigins = new Set([
   "http://localhost:3001",
   "http://localhost:3002",
   "http://127.0.0.1:3001",
   "http://127.0.0.1:3002",
 ]);
+if (lanHost) allowedOrigins.add(`http://${lanHost}:3001`);
 const io = new Server(httpServer, {
   cors: { origin: [...allowedOrigins] },
 });
 const activeSockets = new Map();
 const activeCalls = new Map();
-const ringTimeoutMs = 45_000;
+const ringTimeoutMs = 90_000;
 
 app.use(express.json({ limit: "1mb" }));
 app.use((request, response, next) => {
@@ -301,6 +336,18 @@ function parseJson(value, fallback = null) {
   } catch {
     return fallback;
   }
+}
+
+function normalizeChatTheme(value) {
+  if (typeof value === "string") return Object.hasOwn(legacyChatThemes, value) ? legacyChatThemes[value] : null;
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  if (Object.keys(value).length !== 2) return null;
+  if (!validBubbleThemes.has(value.bubble) || !validWallpaperThemes.has(value.wallpaper)) return null;
+  return { bubble: value.bubble, wallpaper: value.wallpaper };
+}
+
+function storedChatTheme(value) {
+  return normalizeChatTheme(value) ?? defaultChatTheme;
 }
 
 function cleanExpiredEphemeral() {
@@ -520,6 +567,24 @@ function finishCall(callId, status) {
   emitCallDataChanged(call);
 }
 
+function deliverIncomingCall(call) {
+  if (call.status !== "ringing" || !call.callerReady || call.incomingNotified) return;
+  if (Date.now() >= call.deadlineAt) {
+    finishCall(call.id, "missed");
+    return;
+  }
+  if (!(activeSockets.get(call.recipientId)?.size ?? 0)) return;
+  const caller = userById.get(call.callerId);
+  if (!caller) return;
+  call.incomingNotified = true;
+  io.to(`user:${call.recipientId}`).emit("call:incoming", {
+    callId: call.id,
+    callerId: call.callerId,
+    callerName: caller.name,
+    kind: call.kind,
+  });
+}
+
 app.get("/api/health", (_request, response) => response.json({ status: "ok" }));
 
 app.post("/api/login", (request, response) => {
@@ -581,6 +646,10 @@ app.get("/api/bootstrap", (request, response) => {
       SELECT last_read_message_id AS lastReadMessageId, updated_at AS updatedAt
       FROM chat_reads WHERE user_id = ? AND peer_id = ?
     `).get(userId, contact.id);
+    const peerReadMarker = database.prepare(`
+      SELECT last_read_message_id AS lastReadMessageId, updated_at AS updatedAt
+      FROM chat_reads WHERE user_id = ? AND peer_id = ?
+    `).get(contact.id, userId);
     const unread = readMarker
       ? database.prepare(`SELECT COUNT(*) AS count FROM messages WHERE sender_id = ? AND recipient_id = ? AND id > ?`)
         .get(contact.id, userId, readMarker.lastReadMessageId).count
@@ -595,7 +664,9 @@ app.get("/api/bootstrap", (request, response) => {
       unread,
       lastReadMessageId: readMarker?.lastReadMessageId ?? 0,
       lastReadAt: readMarker?.updatedAt ?? null,
-      theme: parseJson(preference?.themeJson),
+      peerLastReadMessageId: peerReadMarker?.lastReadMessageId ?? 0,
+      peerLastReadAt: peerReadMarker?.updatedAt ?? null,
+      theme: storedChatTheme(parseJson(preference?.themeJson)),
       bg,
       fg,
       online: (activeSockets.get(contact.id)?.size ?? 0) > 0,
@@ -753,7 +824,7 @@ app.get("/api/bootstrap", (request, response) => {
     FROM chat_preferences WHERE user_id = ? ORDER BY updated_at DESC
   `).all(userId).map((preference) => ({
     contactId: preference.contactId,
-    theme: parseJson(preference.themeJson),
+    theme: storedChatTheme(parseJson(preference.themeJson)),
     updatedAt: preference.updatedAt,
   }));
   response.json({
@@ -1446,16 +1517,15 @@ app.put("/api/chats/:contactId/preferences", (request, response) => {
   if (!isValidUser(userId) || !isValidUser(peerId) || userId === peerId || !isConnected(userId, peerId)) {
     return response.status(403).json({ error: "Chat preferences require a valid accepted connection." });
   }
-  if (!["default", "mint", "sunset", "midnight"].includes(theme)) {
-    return response.status(400).json({ error: "theme must be one of default, mint, sunset, or midnight." });
-  }
+  const normalizedTheme = normalizeChatTheme(theme);
+  if (!normalizedTheme) return response.status(400).json({ error: "theme must contain a supported bubble and wallpaper selection." });
   const updatedAt = new Date().toISOString();
   database.prepare(`
     INSERT INTO chat_preferences (user_id, peer_id, theme_json, updated_at) VALUES (?, ?, ?, ?)
     ON CONFLICT(user_id, peer_id) DO UPDATE SET theme_json = excluded.theme_json, updated_at = excluded.updated_at
-  `).run(userId, peerId, JSON.stringify(theme), updatedAt);
+  `).run(userId, peerId, JSON.stringify(normalizedTheme), updatedAt);
   emitUserChange([userId], "chat-preferences", { contactId: peerId });
-  response.json({ contactId: peerId, theme, updatedAt });
+  response.json({ contactId: peerId, theme: normalizedTheme, updatedAt });
 });
 
 app.delete("/api/chats/:contactId", (request, response) => {
@@ -1535,6 +1605,20 @@ io.on("connection", (socket) => {
   socket.data.userId = userId;
   socket.join(`user:${userId}`);
   io.emit("presence:changed");
+  for (const call of activeCalls.values()) {
+    if (call.recipientId === userId) deliverIncomingCall(call);
+  }
+
+  socket.on("chat:typing", (payload) => {
+    const recipientId = typeof payload?.recipientId === "string" ? payload.recipientId : "";
+    if (typeof payload?.typing !== "boolean" || !recipientId || recipientId === userId
+      || !userById.get(recipientId) || !isConnected(userId, recipientId)) return;
+    socket.to(`user:${recipientId}`).emit("chat:typing", {
+      senderId: userId,
+      recipientId,
+      typing: payload.typing,
+    });
+  });
 
   socket.on("call:start", (payload, acknowledge) => {
     const recipientId = typeof payload?.recipientId === "string" ? payload.recipientId : "";
@@ -1545,10 +1629,6 @@ io.on("connection", (socket) => {
     }
     if (!isConnected(userId, recipientId)) {
       acknowledge?.({ error: "Accept this account's connection request before calling." });
-      return;
-    }
-    if (!(activeSockets.get(recipientId)?.size ?? 0)) {
-      acknowledge?.({ error: "That account is offline. Ask them to open INChat before calling." });
       return;
     }
     const busy = [...activeCalls.values()].some((call) =>
@@ -1571,11 +1651,14 @@ io.on("connection", (socket) => {
       kind,
       status: "ringing",
       acceptedAt: null,
+      callerReady: false,
+      incomingNotified: false,
+      deadlineAt: Date.now() + ringTimeoutMs,
       timeout: null,
     };
     call.timeout = setTimeout(() => finishCall(call.id, "missed"), ringTimeoutMs);
     activeCalls.set(call.id, call);
-    acknowledge?.({ callId: call.id, createdAt, kind });
+    acknowledge?.({ callId: call.id, createdAt, kind, status: "ringing" });
     emitCallDataChanged(call);
   });
 
@@ -1585,18 +1668,8 @@ io.on("connection", (socket) => {
       acknowledge?.({ error: "This call is no longer available." });
       return;
     }
-    if (!(activeSockets.get(call.recipientId)?.size ?? 0)) {
-      finishCall(call.id, "missed");
-      acknowledge?.({ error: "That account went offline before the call could ring." });
-      return;
-    }
-    const caller = userById.get(userId);
-    socket.to(`user:${call.recipientId}`).emit("call:incoming", {
-      callId: call.id,
-      callerId: userId,
-      callerName: caller.name,
-      kind: call.kind,
-    });
+    call.callerReady = true;
+    deliverIncomingCall(call);
     acknowledge?.({ ready: true });
   });
 
@@ -1620,14 +1693,14 @@ io.on("connection", (socket) => {
 
   socket.on("call:decline", (payload) => {
     const call = activeCalls.get(String(payload?.callId ?? ""));
-    if (call?.recipientId === userId && call.status === "ringing") finishCall(call.id, "declined");
+    if (call?.recipientId === userId && call.status === "ringing") finishCall(call.id, "missed");
   });
 
   socket.on("call:end", (payload) => {
     const call = activeCalls.get(String(payload?.callId ?? ""));
     if (!call || ![call.callerId, call.recipientId].includes(userId)) return;
     const requestedStatus = payload?.status;
-    const status = requestedStatus === "failed" ? "failed" : call.status === "ringing" ? "cancelled" : "completed";
+    const status = requestedStatus === "failed" ? "failed" : call.status === "ringing" ? "missed" : "completed";
     finishCall(call.id, status);
   });
 
@@ -1657,9 +1730,16 @@ io.on("connection", (socket) => {
     userSockets?.delete(socket.id);
     if (userSockets?.size === 0) {
       activeSockets.delete(userId);
-      for (const call of activeCalls.values()) {
-        if (![call.callerId, call.recipientId].includes(userId)) continue;
-        finishCall(call.id, call.status === "ringing" && call.recipientId === userId ? "missed" : "failed");
+      for (const call of [...activeCalls.values()]) {
+        if (call.recipientId === userId && call.status === "ringing") {
+          call.incomingNotified = false;
+          continue;
+        }
+        if (call.callerId === userId && call.status === "ringing") {
+          finishCall(call.id, "missed");
+          continue;
+        }
+        if ([call.callerId, call.recipientId].includes(userId)) finishCall(call.id, "completed");
       }
     }
     io.emit("presence:changed");
@@ -1679,7 +1759,8 @@ app.use((error, request, response, _next) => {
   }
 });
 
-httpServer.listen(port, "127.0.0.1", () => {
-  console.log(`INChat local API listening at http://127.0.0.1:${port}`);
+const listenHost = lanHost || "127.0.0.1";
+httpServer.listen(port, listenHost, () => {
+  console.log(`INChat local API listening at http://${listenHost}:${port}`);
   console.log(`SQLite database: ${databasePath}`);
 });
