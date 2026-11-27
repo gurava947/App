@@ -1535,36 +1535,100 @@ app.delete("/api/chats/:contactId", (request, response) => {
     return response.status(400).json({ error: "A valid userId and different contactId are required." });
   }
   if (!isConnected(userId, peerId)) return response.status(403).json({ error: "Chat deletion requires an accepted connection." });
+  const persistedActiveCall = database.prepare(`
+    SELECT 1 FROM calls
+    WHERE ((caller_id = ? AND recipient_id = ?) OR (caller_id = ? AND recipient_id = ?))
+      AND status IN ('ringing', 'active')
+  `).get(userId, peerId, peerId, userId);
+  if (persistedActiveCall || [...activeCalls.values()].some((call) => [call.callerId, call.recipientId].includes(userId)
+    && [call.callerId, call.recipientId].includes(peerId))) {
+    return response.status(409).json({ error: "End the active call before deleting this conversation." });
+  }
   const messages = database.prepare(`
     SELECT content_type AS kind, metadata_json AS payloadJson FROM messages
     WHERE (sender_id = ? AND recipient_id = ?) OR (sender_id = ? AND recipient_id = ?)
   `).all(userId, peerId, peerId, userId);
-  const mediaIds = messages.flatMap((message) => parseJson(message.payloadJson, {}).mediaIds ?? []);
-  const shareIds = messages.filter((message) => message.kind === "location")
-    .map((message) => parseJson(message.payloadJson, {}).shareId).filter(Boolean);
-  const removed = database.prepare(`
-    DELETE FROM messages
-    WHERE (sender_id = ? AND recipient_id = ?) OR (sender_id = ? AND recipient_id = ?)
-  `).run(userId, peerId, peerId, userId);
-  database.prepare("DELETE FROM chat_reads WHERE (user_id = ? AND peer_id = ?) OR (user_id = ? AND peer_id = ?)")
-    .run(userId, peerId, peerId, userId);
-  database.prepare("DELETE FROM chat_preferences WHERE (user_id = ? AND peer_id = ?) OR (user_id = ? AND peer_id = ?)")
-    .run(userId, peerId, peerId, userId);
+  const mediaIds = [...new Set(messages.flatMap((message) => parseJson(message.payloadJson, {}).mediaIds ?? []))];
   const shareRows = database.prepare(`
     SELECT id, sender_id AS senderId, recipient_id AS recipientId FROM live_location_shares
-    WHERE (sender_id = ? AND recipient_id = ?) OR (sender_id = ? AND recipient_id = ?)
+    WHERE ((sender_id = ? AND recipient_id = ?) OR (sender_id = ? AND recipient_id = ?))
+      AND revoked_at IS NULL
   `).all(userId, peerId, peerId, userId);
-  for (const share of shareRows) {
-    database.prepare("UPDATE live_location_shares SET revoked_at = COALESCE(revoked_at, ?), latitude = NULL, longitude = NULL, accuracy = NULL WHERE id = ?")
-      .run(new Date().toISOString(), share.id);
-    io.to(`user:${share.recipientId}`).emit("location:revoked", { id: share.id, senderId: share.senderId });
+  const [userAId, userBId] = [userId, peerId].sort();
+  let deletedMessages = 0;
+  let deletedCalls = 0;
+  const revokedAt = new Date().toISOString();
+  database.exec("BEGIN IMMEDIATE");
+  try {
+    deletedMessages = Number(database.prepare(`
+      DELETE FROM messages
+      WHERE (sender_id = ? AND recipient_id = ?) OR (sender_id = ? AND recipient_id = ?)
+    `).run(userId, peerId, peerId, userId).changes);
+    deletedCalls = Number(database.prepare(`
+      DELETE FROM calls
+      WHERE (caller_id = ? AND recipient_id = ?) OR (caller_id = ? AND recipient_id = ?)
+    `).run(userId, peerId, peerId, userId).changes);
+    database.prepare("DELETE FROM chat_reads WHERE (user_id = ? AND peer_id = ?) OR (user_id = ? AND peer_id = ?)")
+      .run(userId, peerId, peerId, userId);
+    database.prepare("DELETE FROM chat_preferences WHERE (user_id = ? AND peer_id = ?) OR (user_id = ? AND peer_id = ?)")
+      .run(userId, peerId, peerId, userId);
+    database.prepare("DELETE FROM connection_requests WHERE (sender_id = ? AND recipient_id = ?) OR (sender_id = ? AND recipient_id = ?)")
+      .run(userId, peerId, peerId, userId);
+    database.prepare("DELETE FROM connections WHERE user_a_id = ? AND user_b_id = ?").run(userAId, userBId);
+    database.prepare(`
+      UPDATE live_location_shares SET revoked_at = ?, latitude = NULL, longitude = NULL, accuracy = NULL
+      WHERE (sender_id = ? AND recipient_id = ?) OR (sender_id = ? AND recipient_id = ?)
+    `).run(revokedAt, userId, peerId, peerId, userId);
+    database.exec("COMMIT");
+  } catch (error) {
+    database.exec("ROLLBACK");
+    throw error;
   }
+
+  for (const share of shareRows) io.to(`user:${share.recipientId}`).emit("location:revoked", { id: share.id, senderId: share.senderId });
   for (const mediaId of mediaIds) {
     const owner = database.prepare("SELECT owner_id AS ownerId FROM media_files WHERE id = ?").get(mediaId);
     if (owner) cleanupMediaIfUnreferenced(mediaId, owner.ownerId);
   }
-  emitUserChange([userId, peerId], "message", { contactId: peerId });
-  response.json({ deleted: true, deletedMessages: Number(removed.changes), contactId: peerId });
+  emitConnectionChanged([userId, peerId]);
+  response.json({ deleted: true, deletedMessages, deletedCalls, contactId: peerId });
+});
+
+app.delete("/api/calls", (request, response) => {
+  const userId = request.body?.userId ?? request.query.userId;
+  if (!isValidUser(userId)) return response.status(400).json({ error: "A valid userId is required." });
+  const calls = database.prepare(`
+    SELECT caller_id AS callerId, recipient_id AS recipientId
+    FROM calls
+    WHERE (caller_id = ? OR recipient_id = ?) AND status NOT IN ('ringing', 'active')
+  `).all(userId, userId);
+  const removed = database.prepare(`
+    DELETE FROM calls
+    WHERE (caller_id = ? OR recipient_id = ?) AND status NOT IN ('ringing', 'active')
+  `).run(userId, userId);
+  if (removed.changes > 0) emitUserChange(calls.flatMap((call) => [call.callerId, call.recipientId]), "call-deleted");
+  response.json({ deletedCalls: Number(removed.changes) });
+});
+
+app.delete("/api/calls/:callId", (request, response) => {
+  const userId = request.body?.userId ?? request.query.userId;
+  const callId = Number(request.params.callId);
+  if (!Number.isSafeInteger(callId) || callId < 1 || !isValidUser(userId)) {
+    return response.status(400).json({ error: "A valid callId and userId are required." });
+  }
+  const call = database.prepare(`
+    SELECT caller_id AS callerId, recipient_id AS recipientId, status
+    FROM calls WHERE id = ?
+  `).get(callId);
+  if (!call || ![call.callerId, call.recipientId].includes(userId)) {
+    return response.status(404).json({ error: "Call history entry not found for this account." });
+  }
+  if (call.status === "ringing" || call.status === "active") {
+    return response.status(409).json({ error: "An active call cannot be deleted from call history." });
+  }
+  const removed = database.prepare("DELETE FROM calls WHERE id = ?").run(callId);
+  if (removed.changes > 0) emitUserChange([call.callerId, call.recipientId], "call-deleted", { callId });
+  response.json({ deleted: removed.changes > 0 });
 });
 
 app.get("/api/storage", (_request, response) => response.json(getStorageInfo()));

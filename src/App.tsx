@@ -431,6 +431,40 @@ function App() {
     void callSession.startCall(contactId, contact.name, kind).catch((error: unknown) => notify(error instanceof Error ? error.message : "Could not start this call."));
   };
 
+  const deleteChat = async (chat: Chat) => {
+    if (!user || !window.confirm(`Permanently delete the conversation with ${chat.name} for both accounts? This removes its messages, call history, and connection and cannot be undone.`)) return;
+    try {
+      const result = await api.deleteChat(user.id, chat.id);
+      await refresh(user.id);
+      setMobileChatOpen(false);
+      notify(`Conversation deleted for both accounts (${result.deletedMessages} messages and ${result.deletedCalls} calls removed).`);
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "Could not delete this conversation.");
+    }
+  };
+
+  const deleteCallHistoryEntry = async (callId: number) => {
+    if (!user || !window.confirm("Delete this call record for both connected accounts? This cannot be undone.")) return;
+    try {
+      await api.deleteCall(callId, user.id);
+      await refresh(user.id);
+      notify("Call record deleted for both accounts.");
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "Could not delete this call record.");
+    }
+  };
+
+  const clearCallHistory = async () => {
+    if (!user || !window.confirm("Delete all call history shared with your connected accounts? The records will be removed for both participants. Active calls will not be affected.")) return;
+    try {
+      const result = await api.clearCallHistory(user.id);
+      await refresh(user.id);
+      notify(`${result.deletedCalls} call records deleted for both accounts.`);
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "Could not clear call history.");
+    }
+  };
+
   const publishUpdate = async (file: File, caption: string) => {
     if (!user) throw new Error("Sign in before sharing an update.");
     const media = await api.uploadMedia(user.id, file);
@@ -584,10 +618,10 @@ function App() {
     <main className="main-content" onTouchStart={startPageSwipe} onTouchEnd={finishPageSwipe} onTouchCancel={() => { pageSwipeStart.current = null; }}>
       {page === "Chats" && (showNewMessage
         ? <NewMessageModal directory={data.directory} incomingRequests={data.incomingRequests} search={newMessageSearch} setSearch={setNewMessageSearch} onClose={() => { setShowNewMessage(false); setNewMessageSearch(""); }} onChoose={openConnection} onRequest={sendConnectionRequest} onAccept={acceptConnectionRequest} onDecline={declineConnectionRequest} />
-        : <ChatsPage user={user} chats={filteredChats} calls={data.calls} selectedChat={selectedChat} selectedId={selectedId} search={search} setSearch={setSearch} draft={draft} setDraft={setDraft} mobileOpen={mobileChatOpen} pendingRequestCount={data.incomingRequests.length} chatTheme={selectedChatTheme} showPresenceStatus={showPresenceStatus} typingUserIds={typingUserIds} onTypingChange={emitTyping} onCall={(contactId, kind) => startCall(contactId, kind)} onSelect={selectChat} onBack={() => setMobileChatOpen(false)} onNewMessage={() => { setNewMessageSearch(""); setShowNewMessage(true); }} onSend={sendMessage} onPollVote={(pollId, optionId) => void votePoll(pollId, optionId).catch((error: unknown) => notify(error instanceof Error ? error.message : "Could not vote in this poll."))} onEventRsvp={(eventId, response) => void rsvpEvent(eventId, response).catch((error: unknown) => notify(error instanceof Error ? error.message : "Could not update your event response."))} onShareFiles={sendFiles} onShareLocation={shareLocation} onCreatePoll={createPoll} onCreateEvent={createEvent} onShareContact={shareContact} onThemeChange={(theme) => changeChatTheme(theme)} />)}
+        : <ChatsPage user={user} chats={filteredChats} calls={data.calls} selectedChat={selectedChat} selectedId={selectedId} search={search} setSearch={setSearch} draft={draft} setDraft={setDraft} mobileOpen={mobileChatOpen} pendingRequestCount={data.incomingRequests.length} chatTheme={selectedChatTheme} showPresenceStatus={showPresenceStatus} typingUserIds={typingUserIds} onTypingChange={emitTyping} onCall={(contactId, kind) => startCall(contactId, kind)} onSelect={selectChat} onBack={() => setMobileChatOpen(false)} onNewMessage={() => { setNewMessageSearch(""); setShowNewMessage(true); }} onDeleteChat={(chat) => void deleteChat(chat)} onSend={sendMessage} onPollVote={(pollId, optionId) => void votePoll(pollId, optionId).catch((error: unknown) => notify(error instanceof Error ? error.message : "Could not vote in this poll."))} onEventRsvp={(eventId, response) => void rsvpEvent(eventId, response).catch((error: unknown) => notify(error instanceof Error ? error.message : "Could not update your event response."))} onShareFiles={sendFiles} onShareLocation={shareLocation} onCreatePoll={createPoll} onCreateEvent={createEvent} onShareContact={shareContact} onThemeChange={(theme) => changeChatTheme(theme)} />)}
       {page === "Updates" && <UpdatesPage user={user} updates={data.updates} notes={data.notes} onAddUpdate={publishUpdate} onCreateNote={createNote} onDeleteUpdate={deleteUpdate} onDeleteNote={deleteNote} notify={notify} />}
       {page === "Reels" && <ReelsPage feed={data.feed} chats={data.chats} userId={user.id} onCreatePost={createFeedPost} onShare={shareFeedPost} onLike={(postId, active) => feedAction(postId, "like", active)} onSave={(postId, active) => feedAction(postId, "save", active)} onRepost={(postId, active) => feedAction(postId, "repost", active)} onComment={addFeedComment} onLoadComments={loadFeedComments} onConnect={sendConnectionRequest} onDeletePost={deleteFeedPost} notify={notify} />}
-      {page === "Calls" && <CallsPage calls={data.calls} onCall={(contactId, kind) => void startCall(contactId, kind)} />}
+      {page === "Calls" && <CallsPage calls={data.calls} onCall={(contactId, kind) => void startCall(contactId, kind)} onDeleteCall={(callId) => void deleteCallHistoryEntry(callId)} onClearCallHistory={() => void clearCallHistory()} />}
       {page === "Settings" && <SettingsPage user={user} storage={data.storage} notificationsOn={notificationsOn} darkMode={darkMode} showPresenceStatus={showPresenceStatus} onToggleNotifications={() => void toggleNotifications()} onToggleDarkMode={toggleTheme} onTogglePresenceStatus={togglePresenceStatus} onClearStorage={() => void clearStorage()} onSignOut={signOut} />}
     </main>
     {callSession.activeCall && <CallOverlay

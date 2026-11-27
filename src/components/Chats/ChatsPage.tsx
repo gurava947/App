@@ -3,7 +3,7 @@ import { ConversationPanel } from "./ConversationPanel";
 import type { CallEntry, Chat, ChatTheme, User } from "../../types";
 import "./Chats.css";
 
-export function ChatsPage({ user, chats, calls, selectedChat, selectedId, search, setSearch, draft, setDraft, mobileOpen, pendingRequestCount, chatTheme, showPresenceStatus, typingUserIds, onTypingChange, onCall, onSelect, onBack, onNewMessage, onSend, onPollVote, onEventRsvp, onShareFiles, onShareLocation, onCreatePoll, onCreateEvent, onShareContact, onThemeChange }: {
+export function ChatsPage({ user, chats, calls, selectedChat, selectedId, search, setSearch, draft, setDraft, mobileOpen, pendingRequestCount, chatTheme, showPresenceStatus, typingUserIds, onTypingChange, onCall, onSelect, onBack, onNewMessage, onDeleteChat, onSend, onPollVote, onEventRsvp, onShareFiles, onShareLocation, onCreatePoll, onCreateEvent, onShareContact, onThemeChange }: {
   user: User;
   chats: Chat[];
   calls: CallEntry[];
@@ -23,6 +23,7 @@ export function ChatsPage({ user, chats, calls, selectedChat, selectedId, search
   onSelect: (chat: Chat) => void;
   onBack: () => void;
   onNewMessage: () => void;
+  onDeleteChat: (chat: Chat) => void;
   onSend: React.FormEventHandler<HTMLFormElement>;
   onPollVote: (pollId: number, optionId: number) => void;
   onEventRsvp: (eventId: number, response: "going" | "interested" | "not_going") => void;
@@ -34,7 +35,7 @@ export function ChatsPage({ user, chats, calls, selectedChat, selectedId, search
   onThemeChange: (theme: ChatTheme) => Promise<void>;
 }) {
   return <section className={`chat-workspace${mobileOpen ? " mobile-chat-open" : ""}`} aria-label="Chats">
-    <ChatSidebar chats={chats} selectedId={selectedId} search={search} setSearch={setSearch} pendingRequestCount={pendingRequestCount} typingUserIds={typingUserIds} showPresenceStatus={showPresenceStatus} onSelect={onSelect} onNewMessage={onNewMessage} />
+    <ChatSidebar chats={chats} selectedId={selectedId} search={search} setSearch={setSearch} pendingRequestCount={pendingRequestCount} typingUserIds={typingUserIds} showPresenceStatus={showPresenceStatus} onSelect={onSelect} onNewMessage={onNewMessage} onDeleteChat={onDeleteChat} />
     {selectedChat
       ? <ConversationPanel user={user} chat={selectedChat} chats={chats} calls={calls.filter((call) => call.contactId === selectedChat.id)} theme={chatTheme} showPresenceStatus={showPresenceStatus} draft={draft} setDraft={setDraft} isTyping={typingUserIds.has(selectedChat.id)} onTypingChange={onTypingChange} onCall={onCall} onSend={onSend} onBack={onBack} onPollVote={onPollVote} onEventRsvp={onEventRsvp} onShareFiles={onShareFiles} onShareLocation={onShareLocation} onCreatePoll={onCreatePoll} onCreateEvent={onCreateEvent} onShareContact={onShareContact} onThemeChange={onThemeChange} />
       : null}

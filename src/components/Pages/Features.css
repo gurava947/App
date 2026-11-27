@@ -91,14 +91,15 @@
 .story-viewer { position: relative; width: min(420px, 100%); height: min(780px, 88dvh); overflow: hidden; border: 1px solid #ffffff20; border-radius: 22px; background: #0c140e; color: white; box-shadow: 0 24px 80px #0008; }
 .story-progress { position: absolute; z-index: 2; top: 9px; right: 12px; left: 12px; height: 3px; border-radius: 3px; background: #ffffff52; }
 .story-progress span { height: 100%; display: block; border-radius: inherit; background: white; transition: width .2s ease; }
-.story-viewer-header { position: absolute; z-index: 2; top: 21px; right: 12px; left: 12px; display: flex; align-items: center; gap: 8px; text-shadow: 0 1px 5px #000; }
+.story-viewer-header { position: absolute; z-index: 2; top: max(21px, env(safe-area-inset-top)); right: 12px; left: 12px; display: flex; align-items: center; gap: 8px; text-shadow: 0 1px 5px #000; }
 .story-viewer-header strong { font-size: 10px; }
 .story-viewer-header small { margin-left: auto; color: #ffffffbd; font-size: 8px; }
-.story-viewer-header button { width: 28px; height: 28px; padding: 0; border: 0; background: transparent; color: white; cursor: pointer; }
+.story-viewer-header button { width: 42px; height: 42px; padding: 0; flex: 0 0 auto; display: grid; place-items: center; border: 1px solid #ffffff50; border-radius: 50%; background: #07100dc7; color: white; box-shadow: 0 4px 16px #0008; backdrop-filter: blur(12px); cursor: pointer; }
+.story-viewer-header button:hover { background: #07100def; }
 .story-media { width: 100%; height: 100%; display: grid; place-items: center; background: radial-gradient(ellipse at 50% 20%, #395b43, #0b130d 66%); }
 .story-media img, .story-media video { width: 100%; height: 100%; object-fit: contain; }
 .story-media p { position: absolute; right: 24px; bottom: 30px; left: 24px; color: white; font-size: 15px; line-height: 1.5; text-align: center; text-shadow: 0 2px 8px #000; }
-.story-previous, .story-next { position: absolute; top: 49%; width: 30px; height: 52px; border: 0; border-radius: 12px; background: #0004; color: white; font-size: 25px; cursor: pointer; }
+.story-previous, .story-next { position: absolute; top: 49%; width: 42px; height: 42px; display: grid; place-items: center; border: 1px solid #ffffff50; border-radius: 50%; background: #07100dc7; color: white; box-shadow: 0 4px 16px #0008; backdrop-filter: blur(12px); font-size: 25px; cursor: pointer; }
 .story-previous { left: 8px; }
 .story-next { right: 8px; }
 
@@ -127,7 +128,7 @@
 .reel-viewer-feed { width: 100%; height: 100dvh; overflow-y: auto; overscroll-behavior-y: contain; scroll-snap-type: y mandatory; scrollbar-width: none; outline: none; }
 .reel-viewer-feed::-webkit-scrollbar { display: none; }
 .reel-viewer-item { width: 100%; height: 100dvh; min-height: 100dvh; display: grid; place-items: center; scroll-snap-align: start; scroll-snap-stop: always; background: #050706; }
-.reel-viewer-frame { position: relative; width: min(100%, 560px); height: 100dvh; overflow: hidden; isolation: isolate; background: #050706; color: white; }
+.reel-viewer-frame { position: relative; width: min(100%, 560px); height: 100dvh; overflow: hidden; isolation: isolate; border-radius: 20px; background: #050706; color: white; }
 .reel-viewer-media-area { position: absolute; z-index: 0; inset: 0; display: grid; place-items: center; overflow: hidden; touch-action: pan-y; user-select: none; }
 .reel-viewer-media { width: 100%; height: 100%; display: block; object-fit: contain; background: #050706; }
 .reel-viewer-unavailable { color: #ffffffc7; font-size: 13px; }

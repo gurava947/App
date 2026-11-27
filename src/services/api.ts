@@ -119,7 +119,14 @@ export const api = {
     method: "PUT",
     body: JSON.stringify({ userId, theme }),
   }),
-  clearChat: (userId: string, contactId: string) => request<{ deleted: boolean; deletedMessages: number }>(`/chats/${encodeURIComponent(contactId)}`, {
+  deleteChat: (userId: string, contactId: string) => request<{ deleted: boolean; deletedMessages: number; deletedCalls: number }>(`/chats/${encodeURIComponent(contactId)}`, {
+    method: "DELETE",
+    body: JSON.stringify({ userId }),
+  }),
+  deleteCall: (callId: number, userId: string) => request<{ deleted: boolean }>(`/calls/${callId}?userId=${encodeURIComponent(userId)}`, {
+    method: "DELETE",
+  }),
+  clearCallHistory: (userId: string) => request<{ deletedCalls: number }>("/calls", {
     method: "DELETE",
     body: JSON.stringify({ userId }),
   }),
